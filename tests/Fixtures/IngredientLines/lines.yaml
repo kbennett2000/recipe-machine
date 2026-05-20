@@ -1,0 +1,239 @@
+# Ingredient-line parser fixtures for IngredientParserTest.
+# Each entry: input string + expected structured output.
+# Defaults for omitted expected.* fields:
+#   parsed=true, optional=false, modifier=null, note=null, amount_high=null
+#
+# When `parsed: false` is expected, amount/unit/ingredient/modifier/note
+# should not be asserted (only `parsed` and `optional` matter).
+
+cases:
+  # ----- Simple canonical -----
+  - name: simple-2-cups-flour
+    input: "2 cups flour"
+    expected: { parsed: true, amount: 2, unit: cup, ingredient: flour }
+
+  - name: simple-1-tsp-salt
+    input: "1 tsp salt"
+    expected: { parsed: true, amount: 1, unit: tsp, ingredient: salt }
+
+  - name: simple-3-eggs
+    input: "3 eggs"
+    expected: { parsed: true, amount: 3, unit: whole, ingredient: eggs }
+
+  - name: simple-100-g-butter
+    input: "100 g butter"
+    expected: { parsed: true, amount: 100, unit: g, ingredient: butter }
+
+  - name: simple-1-lb-ground-beef
+    input: "1 lb ground beef"
+    expected: { parsed: true, amount: 1, unit: lb, ingredient: "ground beef" }
+
+  # ----- Fractions -----
+  - name: fraction-half-cup-butter
+    input: "1/2 cup butter"
+    expected: { parsed: true, amount: 0.5, unit: cup, ingredient: butter }
+
+  - name: fraction-mixed-1-1-2-tsp-salt
+    input: "1 1/2 tsp salt"
+    expected: { parsed: true, amount: 1.5, unit: tsp, ingredient: salt }
+
+  - name: fraction-unicode-half-cup-sugar
+    input: "½ cup sugar"
+    expected: { parsed: true, amount: 0.5, unit: cup, ingredient: sugar }
+
+  - name: fraction-unicode-mixed-1-half-cups-milk
+    input: "1½ cups milk"
+    expected: { parsed: true, amount: 1.5, unit: cup, ingredient: milk }
+
+  - name: fraction-three-quarters-cup-oats
+    input: "3/4 cup oats"
+    expected: { parsed: true, amount: 0.75, unit: cup, ingredient: oats }
+
+  # ----- Ranges -----
+  - name: range-hyphen-2-3-cloves-garlic
+    input: "2-3 cloves garlic"
+    expected: { parsed: true, amount: 2, amount_high: 3, unit: whole, ingredient: "garlic cloves" }
+
+  - name: range-endash-1-2-tbsp-oil
+    input: "1–2 tbsp oil"
+    expected: { parsed: true, amount: 1, amount_high: 2, unit: tbsp, ingredient: oil }
+
+  - name: range-endash-4-5-tablespoons-lard
+    input: "4–5 tablespoons lard"
+    expected: { parsed: true, amount: 4, amount_high: 5, unit: tbsp, ingredient: lard }
+
+  - name: range-word-to-2-to-3-cups-water
+    input: "2 to 3 cups water"
+    expected: { parsed: true, amount: 2, amount_high: 3, unit: cup, ingredient: water }
+
+  # The 10-15 minutes "trap": parser dutifully treats it as an ingredient with
+  # ingredient="minutes". Documents that a method-line bleeding into the
+  # ingredient section will produce a meaningless-but-non-fatal parse.
+  - name: range-trap-10-15-minutes
+    input: "10-15 minutes"
+    expected: { parsed: true, amount: 10, amount_high: 15, unit: whole, ingredient: minutes }
+
+  # ----- Unit normalization -----
+  - name: norm-2-Tbsp-butter
+    input: "2 Tbsp butter"
+    expected: { parsed: true, amount: 2, unit: tbsp, ingredient: butter }
+
+  - name: norm-1-Tablespoon-honey
+    input: "1 Tablespoon honey"
+    expected: { parsed: true, amount: 1, unit: tbsp, ingredient: honey }
+
+  - name: norm-3-T-sugar
+    input: "3 T sugar"
+    expected: { parsed: true, amount: 3, unit: tbsp, ingredient: sugar }
+
+  - name: norm-1-fl-oz-vanilla
+    input: "1 fl oz vanilla"
+    expected: { parsed: true, amount: 1, unit: floz, ingredient: vanilla }
+
+  - name: norm-8-oz-cream-cheese
+    input: "8 oz cream cheese"
+    expected: { parsed: true, amount: 8, unit: oz, ingredient: "cream cheese" }
+
+  # ----- Imprecise leading -----
+  - name: imprecise-pinch-of-salt
+    input: "Pinch of salt"
+    expected: { parsed: true, amount: null, unit: pinch, ingredient: salt }
+
+  - name: imprecise-a-handful-of-arugula
+    input: "A handful of arugula"
+    expected: { parsed: true, amount: null, unit: handful, ingredient: arugula }
+
+  - name: imprecise-dash-of-cayenne
+    input: "Dash of cayenne"
+    expected: { parsed: true, amount: null, unit: dash, ingredient: cayenne }
+
+  - name: imprecise-a-splash-of-vinegar
+    input: "A splash of vinegar"
+    expected: { parsed: true, amount: null, unit: splash, ingredient: vinegar }
+
+  - name: imprecise-drizzle-of-olive-oil
+    input: "Drizzle of olive oil"
+    expected: { parsed: true, amount: null, unit: drizzle, ingredient: "olive oil" }
+
+  # ----- Imprecise trailing -----
+  - name: trailing-salt-to-taste
+    input: "Salt to taste"
+    expected: { parsed: true, amount: null, unit: to-taste, ingredient: Salt }
+
+  - name: trailing-black-pepper-to-taste
+    input: "Black pepper to taste"
+    expected: { parsed: true, amount: null, unit: to-taste, ingredient: "Black pepper" }
+
+  - name: trailing-olive-oil-comma-as-needed
+    input: "Olive oil, as needed"
+    expected: { parsed: true, amount: null, unit: as-needed, ingredient: "Olive oil" }
+
+  - name: trailing-water-as-needed
+    input: "Water as needed"
+    expected: { parsed: true, amount: null, unit: as-needed, ingredient: Water }
+
+  # Trap: "for dusting" is not on the imprecise canonical list, so this
+  # falls through to parsed:false. Writers should restate ("Flour, as needed")
+  # if they want it parsed.
+  - name: trailing-trap-flour-for-dusting
+    input: "Flour for dusting"
+    expected: { parsed: false }
+
+  # ----- Optional markers -----
+  - name: optional-prefix-1-egg
+    input: "Optional: 1 egg"
+    expected: { parsed: true, amount: 1, unit: whole, ingredient: egg, optional: true }
+
+  - name: optional-suffix-1-cup-walnuts
+    input: "1 cup walnuts (optional)"
+    expected: { parsed: true, amount: 1, unit: cup, ingredient: walnuts, optional: true }
+
+  # Double-marker idempotence (spec c). Here the marker-stripped line
+  # has no numeric amount and falls through to parsed:false, but the
+  # optional flag is still set exactly once.
+  - name: optional-double-marker-no-amount
+    input: "Optional: extra flour (optional)"
+    expected: { parsed: false, optional: true }
+
+  - name: optional-uppercase-imprecise-nutmeg
+    input: "OPTIONAL: pinch of nutmeg"
+    expected: { parsed: true, amount: null, unit: pinch, ingredient: nutmeg, optional: true }
+
+  # ----- Modifiers (post-comma) -----
+  - name: modifier-3-cloves-garlic-minced
+    input: "3 cloves garlic, minced"
+    expected: { parsed: true, amount: 3, unit: whole, ingredient: "garlic cloves", modifier: minced }
+
+  - name: modifier-half-cup-butter-softened
+    input: "1/2 cup butter, softened"
+    expected: { parsed: true, amount: 0.5, unit: cup, ingredient: butter, modifier: softened }
+
+  - name: modifier-2-large-eggs-beaten
+    input: "2 large eggs, beaten"
+    expected: { parsed: true, amount: 2, unit: whole, ingredient: "large eggs", modifier: beaten }
+
+  - name: modifier-1-medium-onion-finely-diced
+    input: "1 medium onion, finely diced"
+    expected: { parsed: true, amount: 1, unit: whole, ingredient: "medium onion", modifier: "finely diced" }
+
+  # ----- Em-dash notes -----
+  - name: note-2-cups-flour-hydration
+    input: "2 cups flour — see note about hydration"
+    expected: { parsed: true, amount: 2, unit: cup, ingredient: flour, note: "see note about hydration" }
+
+  - name: note-1-tsp-salt-diamond-crystal
+    input: "1 tsp salt — Diamond Crystal, not Morton"
+    expected: { parsed: true, amount: 1, unit: tsp, ingredient: salt, note: "Diamond Crystal, not Morton" }
+
+  # ----- Whole / countable -----
+  - name: whole-3-garlic-cloves-preferred
+    input: "3 garlic cloves"
+    expected: { parsed: true, amount: 3, unit: whole, ingredient: "garlic cloves" }
+
+  - name: whole-3-cloves-garlic-folded
+    input: "3 cloves garlic"
+    expected: { parsed: true, amount: 3, unit: whole, ingredient: "garlic cloves" }
+
+  - name: whole-2-lemons
+    input: "2 lemons"
+    expected: { parsed: true, amount: 2, unit: whole, ingredient: lemons }
+
+  - name: whole-1-large-onion-diced
+    input: "1 large onion, diced"
+    expected: { parsed: true, amount: 1, unit: whole, ingredient: "large onion", modifier: diced }
+
+  - name: whole-4-large-eggs
+    input: "4 large eggs"
+    expected: { parsed: true, amount: 4, unit: whole, ingredient: "large eggs" }
+
+  # ----- Should-fail (parsed:false) -----
+  # "1 stick butter" is INTENDED to fail per the Phase 2A brief, but the spec
+  # explicitly lists `sticks` as a count noun (Section c, "Whole / countable items").
+  # Following the spec, this parses; the fixture is in `should_have_failed_but_spec_says_no`
+  # below. See Phase 2A report for the spec/brief contradiction.
+  - name: fail-glug-of-olive-oil
+    input: "A glug of olive oil"
+    expected: { parsed: false }
+
+  - name: fail-knob-of-butter
+    input: "Knob of butter"
+    expected: { parsed: false }
+
+  - name: fail-some-salt
+    input: "Some salt"
+    expected: { parsed: false }
+
+  - name: fail-box-of-pasta
+    input: "Box of pasta"
+    expected: { parsed: false }
+
+  - name: fail-empty-line
+    input: ""
+    expected: { parsed: false }
+
+  # Spec vs brief contradiction: brief says this should fail; spec says
+  # `stick` is a count noun and folds to ingredient="butter sticks".
+  # I followed the spec; flagged in the Phase 2A report.
+  - name: spec-fold-1-stick-butter
+    input: "1 stick butter"
+    expected: { parsed: true, amount: 1, unit: whole, ingredient: "butter stick" }

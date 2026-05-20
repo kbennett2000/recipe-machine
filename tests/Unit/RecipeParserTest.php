@@ -1,0 +1,215 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Unit;
+
+use App\Recipes\Parser\ParsedIngredient;
+use App\Recipes\Parser\RecipeParser;
+use PHPUnit\Framework\TestCase;
+use RuntimeException;
+
+final class RecipeParserTest extends TestCase
+{
+    private const HONEY_OAT_BREAD_PATH = __DIR__.'/../../recipes/breads/honey-oat-bread.md';
+
+    public function test_parses_honey_oat_bread_frontmatter(): void
+    {
+        $recipe = (new RecipeParser)->parseFile(self::HONEY_OAT_BREAD_PATH);
+        $fm = $recipe->frontmatter;
+
+        $this->assertSame('Honey Oat Bread', $fm->title);
+        $this->assertSame('breads', $fm->category);
+        $this->assertSame('honey-oat-bread', $fm->slug);
+        $this->assertSame('1 loaf', $fm->servings);
+        $this->assertSame(12, $fm->yields);
+        $this->assertSame('20m', $fm->prepTime);
+        $this->assertSame('40m', $fm->cookTime);
+        $this->assertSame('3h', $fm->totalTime);
+        $this->assertSame('350F', $fm->ovenTemp);
+        $this->assertSame('easy', $fm->difficulty);
+        $this->assertSame(['yeast', 'honey', 'loaf'], $fm->tags);
+        $this->assertSame('Semi-sweet mead — honey loves honey', $fm->libation);
+        $this->assertSame([], $fm->extra);
+    }
+
+    public function test_parses_honey_oat_bread_ingredients(): void
+    {
+        $recipe = (new RecipeParser)->parseFile(self::HONEY_OAT_BREAD_PATH);
+
+        $this->assertCount(7, $recipe->ingredients);
+
+        $allParsed = array_filter($recipe->ingredients, fn (ParsedIngredient $i) => $i->parsed);
+        $this->assertCount(7, $allParsed, 'All 7 ingredients should parse cleanly under the v1.6 spec.');
+
+        $expected = [
+            ['amount' => 3.0, 'unit' => 'cup', 'ingredient' => 'flour'],
+            ['amount' => 0.75, 'unit' => 'cup', 'ingredient' => 'rolled oats'],
+            ['amount' => 0.25, 'unit' => 'cup', 'ingredient' => 'honey'],
+            ['amount' => 2.0, 'unit' => 'tbsp', 'ingredient' => 'butter'],
+            ['amount' => 1.5, 'unit' => 'tsp', 'ingredient' => 'salt'],
+            ['amount' => 2.25, 'unit' => 'tsp', 'ingredient' => 'instant yeast'],
+            ['amount' => 1.25, 'unit' => 'cup', 'ingredient' => 'warm milk'],
+        ];
+
+        foreach ($expected as $i => $e) {
+            $this->assertEqualsWithDelta(
+                $e['amount'], $recipe->ingredients[$i]->amount, 1e-9,
+                "ingredient[$i] amount mismatch"
+            );
+            $this->assertSame($e['unit'], $recipe->ingredients[$i]->unit, "ingredient[$i] unit mismatch");
+            $this->assertSame($e['ingredient'], $recipe->ingredients[$i]->ingredient, "ingredient[$i] name mismatch");
+        }
+    }
+
+    public function test_parses_honey_oat_bread_method_steps(): void
+    {
+        $recipe = (new RecipeParser)->parseFile(self::HONEY_OAT_BREAD_PATH);
+
+        $this->assertCount(5, $recipe->method);
+        $this->assertStringContainsString('knead', strtolower($recipe->method[0]));
+        $this->assertStringContainsString('1–1½ hours', $recipe->method[1]);
+        $this->assertStringContainsString('45–60 minutes', $recipe->method[2]);
+        $this->assertStringContainsString('350°F', $recipe->method[3]);
+        $this->assertStringContainsString('35–40 minutes', $recipe->method[3]);
+        $this->assertStringContainsString('butter', $recipe->method[4]);
+    }
+
+    public function test_parses_honey_oat_bread_notes_and_cross_references(): void
+    {
+        $recipe = (new RecipeParser)->parseFile(self::HONEY_OAT_BREAD_PATH);
+
+        $this->assertNotNull($recipe->notes);
+        $this->assertStringContainsString('forgiving dough', $recipe->notes);
+
+        $this->assertContains('pumpkin-soup', $recipe->crossReferences,
+            'Inline [[pumpkin-soup]] reference should land in crossReferences.');
+    }
+
+    public function test_libation_from_frontmatter_when_body_section_absent(): void
+    {
+        $recipe = (new RecipeParser)->parseFile(self::HONEY_OAT_BREAD_PATH);
+
+        // Honey Oat Bread uses the frontmatter `libation` field, not the body section.
+        $this->assertNull($recipe->libationProse);
+        $this->assertSame('Semi-sweet mead — honey loves honey', $recipe->frontmatter->libation);
+    }
+
+    public function test_no_parse_warnings_for_compliant_recipe(): void
+    {
+        $recipe = (new RecipeParser)->parseFile(self::HONEY_OAT_BREAD_PATH);
+        $this->assertSame([], $recipe->parseWarnings);
+    }
+
+    public function test_throws_on_missing_frontmatter(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/missing required `---` frontmatter/');
+        (new RecipeParser)->parseString("# A recipe with no frontmatter\n\n## Ingredients\n- 1 cup flour\n");
+    }
+
+    public function test_throws_on_malformed_yaml(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/Malformed YAML frontmatter/');
+        (new RecipeParser)->parseString("---\ntitle: [unclosed\ncategory: breads\n---\n\n## Ingredients\n- 1 cup flour\n");
+    }
+
+    public function test_throws_on_missing_required_title(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/Required frontmatter field `title`/');
+        (new RecipeParser)->parseString("---\ncategory: breads\n---\n\n## Ingredients\n- 1 cup flour\n");
+    }
+
+    public function test_unknown_frontmatter_keys_land_in_extra(): void
+    {
+        $markdown = <<<MD
+            ---
+            title: Test
+            category: breads
+            secret_field: meow
+            another_extra: 42
+            ---
+
+            ## Ingredients
+            - 1 cup flour
+
+            ## Method
+            1. Mix it.
+            MD;
+        $recipe = (new RecipeParser)->parseString($markdown);
+        $this->assertSame(['secret_field' => 'meow', 'another_extra' => 42], $recipe->frontmatter->extra);
+    }
+
+    public function test_method_alias_instructions_is_recognized(): void
+    {
+        $markdown = <<<MD
+            ---
+            title: Test
+            category: breads
+            ---
+
+            ## Ingredients
+            - 1 cup flour
+
+            ## Instructions
+            1. Mix it.
+            2. Bake it.
+            MD;
+        $recipe = (new RecipeParser)->parseString($markdown);
+        $this->assertCount(2, $recipe->method);
+    }
+
+    public function test_ingredient_sub_groups_are_threaded_to_group_field(): void
+    {
+        $markdown = <<<MD
+            ---
+            title: Test
+            category: desserts
+            ---
+
+            ## Ingredients
+
+            ### Dough
+            - 3 cups flour
+            - 1 tsp salt
+
+            ### Filling
+            - 1 cup walnuts, chopped
+            - 1/2 cup sugar
+
+            ## Method
+            1. Combine.
+            MD;
+        $recipe = (new RecipeParser)->parseString($markdown);
+        $this->assertCount(4, $recipe->ingredients);
+        $this->assertSame('Dough', $recipe->ingredients[0]->group);
+        $this->assertSame('Dough', $recipe->ingredients[1]->group);
+        $this->assertSame('Filling', $recipe->ingredients[2]->group);
+        $this->assertSame('Filling', $recipe->ingredients[3]->group);
+    }
+
+    public function test_cross_references_dedupe_across_frontmatter_and_inline(): void
+    {
+        $markdown = <<<MD
+            ---
+            title: Test
+            category: breads
+            references: [pumpkin-soup, apple-jam]
+            ---
+
+            ## Ingredients
+            - 1 cup flour
+
+            ## Notes
+            Pairs with [[pumpkin-soup]] or some [[Apple Jam]] on top.
+            MD;
+        $recipe = (new RecipeParser)->parseString($markdown);
+        // pumpkin-soup appears in both frontmatter and inline → deduped to one.
+        // "Apple Jam" slugifies to "apple-jam", deduping with the frontmatter entry.
+        $refs = $recipe->crossReferences;
+        sort($refs);
+        $this->assertSame(['apple-jam', 'pumpkin-soup'], $refs);
+    }
+}
