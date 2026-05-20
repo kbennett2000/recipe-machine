@@ -249,11 +249,27 @@ The canonical for unitless counted items is `whole`. Don't confuse this with the
 | Canonical    | Accepted input spellings |
 |--------------|--------------------------|
 | `pinch`      | `pinch`, `pinches`, `a pinch of`, `pinch of` |
-| `dash`       | `dash`, `dashes`, `splash`, `splashes`, `drizzle`, `a dash of` |
+| `dash`       | `dash`, `dashes`, `a dash of` |
+| `splash`     | `splash`, `splashes`, `a splash of` |
+| `drizzle`    | `drizzle`, `drizzled`, `a drizzle of` |
+| `handful`    | `handful`, `handfuls`, `a handful of` |
+| `sprinkle`   | `sprinkle`, `sprinkles`, `a sprinkle of` |
 | `to-taste`   | `to taste`, `to-taste` |
 | `as-needed`  | `as needed`, `as-needed` |
 
-These take the amount slot rather than the unit slot — see "To taste / pinch / as needed" further below for line shape. Tokens like `handful` that don't map to one of the four imprecise canonicals are passed through verbatim with `unit: null` and a warning logged; downstream consumers (shopping list, scaling) should skip them.
+**Structured-output shape.** Imprecise quantities go in the **unit slot**, with `amount: null`. The structured fields are:
+
+```
+amount:     null
+unit:       <one of the eight canonicals above>
+ingredient: <name>
+```
+
+Example: `a pinch of salt` parses to `{amount: null, unit: "pinch", ingredient: "salt", optional: false}`.
+
+The display layer renders these by reading the unit and producing natural prose ("a pinch of salt", "a handful of arugula", "a drizzle of olive oil"). Writers do not need to know or care about the slot layout — they just type natural English.
+
+**Closed list.** The canonical imprecise units are the closed list above. A token like `smidge`, `glug`, `dollop`, or `knob` (as in "a knob of butter") does **not** get a canonical assignment. Such lines fall through to the unparseable-line rule (see "Unparseable lines" below); they render verbatim and skip structured features like scaling and shopping-list aggregation. Writers who hit this should either rephrase ("a pat of butter" → "1 Tbsp butter") or accept that the line stays raw until Phase 10's LLM fallback gets to it.
 
 #### `T` vs `t` disambiguation
 
@@ -397,15 +413,70 @@ All four produce: amount=`1/2`, unit=`cup`, ingredient=`walnuts`, modifier=`chop
 
 The markers themselves are stripped from the structured fields before parsing — `Optional:` does not become part of the amount, and `(optional)` does not become part of the modifier or a comment. Writers who use both markers don't get punished; they just don't get double-flagged.
 
-### "To taste" / "pinch" / "as needed"
+### Imprecise quantity line shapes
 
-These are amount-like tokens with no numeric value. The canonical forms put them where the amount would go:
+Imprecise quantity phrases (pinch, dash, handful, drizzle, splash, sprinkle, to taste, as needed — see the canonical-units table above) appear in two natural English patterns:
 
-- `Salt to taste` → amount=`to-taste`, unit=`null`, ingredient=`salt`
-- `Pinch of salt` → amount=`pinch`, unit=`null`, ingredient=`salt` (the `of` is consumed)
-- `Olive oil, as needed` → ingredient=`olive oil`, modifier=`as needed`
+- **Leading:** `<imprecise> of <ingredient>` — *Pinch of salt*, *Handful of arugula*, *Drizzle of olive oil*, *Splash of vinegar*, *Sprinkle of paprika*.
+- **Trailing:** `<ingredient>[, ] <imprecise>` — *Salt to taste*, *Olive oil as needed*, *Olive oil, as needed*.
 
-Recognized fuzzy amounts: `pinch`, `dash`, `splash`, `handful`, `drizzle`, `to taste`, `as needed`. This is precisely the kind of line where the LLM fallback earns its keep; writers should write naturally.
+All of these produce the same structured shape: `amount: null`, `unit: <canonical>`, `ingredient: <name>`.
+
+Examples:
+
+- `Salt to taste` → `{amount: null, unit: "to-taste", ingredient: "salt"}`
+- `Pinch of salt` → `{amount: null, unit: "pinch", ingredient: "salt"}` (the `of` is consumed)
+- `Olive oil, as needed` → `{amount: null, unit: "as-needed", ingredient: "olive oil"}` (the comma is consumed; the imprecise phrase lifts to the unit slot even when a comma precedes it)
+- `A handful of arugula` → `{amount: null, unit: "handful", ingredient: "arugula"}`
+
+The parser detects the imprecise phrase **before** falling through to the generic `<amount> <unit> <ingredient>[, <modifier>]` shape, so a comma between ingredient and an imprecise trailing phrase does not get interpreted as a modifier delimiter. Writers should write whichever pattern reads naturally; the parser handles both.
+
+### Unparseable lines
+
+Recipes **never** fail to load because of ingredient parse errors. When a line cannot be parsed under any of the rules above — even after canonical normalization — it survives as a raw record and the recipe loads with every other ingredient parsed normally.
+
+#### Structured shape
+
+A parsed line has the structured fields (`amount`, `unit`, `ingredient`, `modifier`, `comment`, `optional`) plus `parsed: true`.
+
+An unparsed line is represented as:
+
+```
+{
+  "raw": "<original verbatim text, leading and trailing whitespace preserved>",
+  "parsed": false
+}
+```
+
+No structured fields. The position of the line within the ingredient list (including its sub-group, if any) is preserved alongside the record.
+
+#### Behavior
+
+- **Rendering.** Unparsed lines appear in the UI exactly as the writer typed them, in their original position. No reformatting, no "broken" styling.
+- **Scaling math.** Unparsed lines are skipped. Scaling the recipe by 2× scales every parsed line; raw lines display unchanged.
+- **Shopping list.** Unparsed lines do not contribute to shopping-list aggregation. They appear under the source recipe with a flag so the writer can copy them by hand.
+- **Ingredient search.** Unparsed lines do not participate in structured ingredient search ("recipes that contain garlic"). Full-text search still indexes their raw text.
+- **Surfacing.** The recipe detail page shows a small, informational indicator: *"(N lines couldn't be auto-parsed)"*. This is **not** an error state — it's a hint that the writer may want to look at those lines if they want the features.
+
+#### LLM fallback — forward note
+
+Phase 10 will route unparsed lines through an LLM fallback. The fallback runs offline (not in the request path) and either:
+
+- Returns a structured parse → the line transitions to `parsed: true` and gets the structured fields.
+- Fails again → the line stays `parsed: false`.
+
+In either outcome, the result is **cached forever**, keyed by the raw line text. A future re-parse of the same exact line text never re-pays the LLM cost. (Roadmap note: this references "Phase 10" per the project's working phase plan, which may not match the public roadmap in the README. Treat the phase number as a forward placeholder, not a hard schedule.)
+
+### Graceful degradation — project-wide principle
+
+The "never fail to load; surface broken state informationally" pattern in this section is **not** an ingredient-specific rule — it's a project-wide principle. The same philosophy applies to:
+
+- **Unresolved cross-references** (Section d.1) — `[[ref]]` to a nonexistent recipe renders as plain bold text, no link, no error. Resolves the moment the target recipe lands.
+- **Missing optional metadata** (Section a) — the recipe renders with whatever's present; absent optional fields collapse silently, with no placeholder text.
+- **Method steps without timer/temperature hints** — still render as plain prose; the cooking-mode highlighting just doesn't fire.
+- **Unknown `## headers`** in the body (Section b) — ignored, not errored.
+
+**Principle: graceful degradation over hard failure, everywhere.** A broken, unusual, or partially-specified recipe should always be readable. Structured features (scaling, search, shopping lists, cross-recipe links) can opt out of the unusual parts, but the human-facing display never breaks.
 
 ---
 
