@@ -82,8 +82,11 @@ cases:
     input: "1 Tablespoon honey"
     expected: { parsed: true, amount: 1, unit: tbsp, ingredient: honey }
 
-  - name: norm-3-T-sugar
-    input: "3 T sugar"
+  # Phase 2A.1: single-letter `T` for tablespoon is no longer recognized
+  # (see spec, "Single-letter forms not in v1"). The fixture now exercises
+  # the lower-case full spelling, which is the v1-recommended form.
+  - name: norm-3-tbsp-sugar
+    input: "3 tbsp sugar"
     expected: { parsed: true, amount: 3, unit: tbsp, ingredient: sugar }
 
   - name: norm-1-fl-oz-vanilla

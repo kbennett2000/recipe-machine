@@ -11,185 +11,67 @@ namespace App\Recipes\Parser;
  *
  * Pipeline order (per Phase 2A brief; the spec implies but does not codify this):
  *
- *   1. Strip leading bullet marker (`- `, `* `, or `\d+\. `) and trim whitespace.
- *      The trimmed text becomes `raw`.
+ *   1. Strip leading bullet marker and trim whitespace. Save as `raw`.
  *   2. Detect and strip `Optional:` prefix and/or `(optional)` suffix.
- *      Set `optional` exactly once; both markers may coexist (idempotence — spec c).
- *   3. Split off note on the FIRST ` — ` (em-dash with surrounding spaces).
- *      Everything after the split → `note` (spec section c, "Inline comments").
- *   4. Try imprecise quantity shapes (leading `<imprecise> of …` and trailing
- *      `… [, ] <imprecise>`). If matched, set unit to the canonical imprecise
- *      form with `amount = null` (spec c, "Imprecise quantity line shapes"),
- *      and stop.
- *   5. Try generic `<amount> <unit> <ingredient>[, <modifier>]` shape.
- *      Amount accepts integers, decimals, fractions, mixed fractions,
- *      unicode fractions, and ranges with `-`, `–`, `—`, or ` to `.
- *   6. Fallback: `parsed = false`, only `raw` is populated.
+ *      Set `optional` exactly once (idempotence — spec c).
+ *   3. Split off note on the FIRST " — " (em-dash with surrounding spaces).
+ *   4. Try imprecise quantity shapes (leading "X of …" and trailing
+ *      "… [, ] X"). If matched, set unit to the canonical imprecise
+ *      form with amount=null and stop.
+ *   5. Try generic "amount [unit] ingredient[, modifier]" shape.
+ *   6. Fallback: parsed=false, only `raw` is populated.
  *
- * Spec resolutions (ambiguities I had to fix to ship):
+ * Canonical-unit lookups (volume, weight, count nouns, single-word
+ * imprecise tokens) are delegated to UnitMatcher.
  *
- *   R1. "Unknown unit-like tokens" vs "unitless counted items"
- *       Spec example "1 box pasta" → unit=null (Section c, "Unknown unit-like
- *       tokens") contradicts spec example "1 large onion" → unit=whole
- *       (Section c, "Whole / countable items"). I resolved by promoting
- *       "1 large onion"'s rule: any amount-bearing line whose post-amount
- *       text doesn't begin with a canonical unit token gets unit=whole,
- *       ingredient=<everything-after-amount>. This means "1 box pasta"
- *       parses to {amount:1, unit:whole, ingredient:"box pasta"}, which
- *       deviates from the spec example. Flagged in the Phase 2A report.
+ * Spec resolutions inherited from Phase 2A (each cited in the v1.6 spec):
  *
- *   R2. Count-noun folding word order
- *       Spec says `3 cloves garlic` → ingredient="garlic cloves". For
- *       `1 stick butter` the spec count-noun list includes `sticks`, so
- *       same fold applies: ingredient="butter sticks". This contradicts
- *       the Phase 2A brief, which listed "1 stick butter" as
- *       should-fail. I followed the spec; flagged in the report.
+ *   R1. Amount-bearing lines whose post-amount text has no canonical
+ *       unit get unit=whole (NOT unit=null). This unifies the spec's
+ *       "1 large onion" and "1 box pasta" examples under a single rule.
+ *       The spec example for "1 box pasta" was reconciled to match in
+ *       Phase 2A.1.
  *
- *   R3. Em-dash + comma interaction
- *       Phase 2A brief: "treating em-dash-comma as modifier, post-comma
- *       plain text as modifier, em-dash-prose as a note field instead".
- *       I interpret: split off the em-dash note first, then split the
- *       remaining text on the first comma into ingredient + modifier.
- *       Modifier and note can coexist on one line.
+ *   R2. Count-noun folding word order: "3 cloves garlic" folds to
+ *       ingredient="garlic cloves" with unit=whole.
  *
- *   R4. Count-noun in trailing position (preferred form per spec)
- *       Spec says `3 garlic cloves` → unit=whole, ingredient="garlic cloves".
- *       This requires looking at the LAST word of the post-amount text.
- *       I implemented: if the post-amount text ends in a count noun (and
- *       its first token is not itself a canonical unit), unit=whole.
+ *   R3. Em-dash + comma interaction: split note off em-dash first,
+ *       then split modifier off the first comma in the remainder.
  */
 final class IngredientParser
 {
     /**
-     * Count nouns per spec Section c, "Whole / countable items".
-     * Both singular and plural forms accepted in input.
-     * Output ingredient preserves writer's pluralization.
+     * Imprecise leading phrases. The trigger phrase identifies the
+     * canonical; the rest of the line is the ingredient.
+     *
+     * @var array<string,string>
      */
-    private const COUNT_NOUNS = [
-        'clove', 'cloves',
-        'slice', 'slices',
-        'sprig', 'sprigs',
-        'head', 'heads',
-        'bunch', 'bunches',
-        'can', 'cans',
-        'jar', 'jars',
-        'stick', 'sticks',
+    private const IMPRECISE_LEADING = [
+        'a pinch of'    => 'pinch',
+        'pinch of'      => 'pinch',
+        'a dash of'     => 'dash',
+        'dash of'       => 'dash',
+        'a splash of'   => 'splash',
+        'splash of'     => 'splash',
+        'a drizzle of'  => 'drizzle',
+        'drizzle of'    => 'drizzle',
+        'a handful of'  => 'handful',
+        'handful of'    => 'handful',
+        'a sprinkle of' => 'sprinkle',
+        'sprinkle of'   => 'sprinkle',
     ];
 
     /**
-     * Imprecise canonicals per spec v1.6 (closed list of 8).
-     * Map: lower-cased trigger phrase → canonical unit.
-     * Order matters for the trailing-pattern matcher — longer phrases
-     * must be tried before shorter ones.
+     * Imprecise trailing phrases. The trigger appears at the end of
+     * the line, optionally preceded by a comma.
+     *
+     * @var array<string,string>
      */
-    private const IMPRECISE_LEADING = [
-        'a pinch of'   => 'pinch',
-        'pinch of'     => 'pinch',
-        'a dash of'    => 'dash',
-        'dash of'      => 'dash',
-        'a splash of'  => 'splash',
-        'splash of'    => 'splash',
-        'a drizzle of' => 'drizzle',
-        'drizzle of'   => 'drizzle',
-        'a handful of' => 'handful',
-        'handful of'   => 'handful',
-        'a sprinkle of'=> 'sprinkle',
-        'sprinkle of'  => 'sprinkle',
-    ];
-
     private const IMPRECISE_TRAILING = [
         'to taste'  => 'to-taste',
         'to-taste'  => 'to-taste',
         'as needed' => 'as-needed',
         'as-needed' => 'as-needed',
-    ];
-
-    /**
-     * Canonical unit lookup. Multi-word entries (e.g. `fl oz`) must be
-     * matched before single-word ones. The keys here are lower-case
-     * unless case is semantically meaningful (e.g. `T` vs `t`).
-     *
-     * Listed longest-first within each canonical to give greedy matching
-     * a chance to find the right one.
-     */
-    private const UNIT_MAP = [
-        // Volume (multi-word first)
-        'fluid ounces' => 'floz',
-        'fluid ounce'  => 'floz',
-        'fl. oz.'      => 'floz',
-        'fl oz.'       => 'floz',
-        'fl. oz'       => 'floz',
-        'fl oz'        => 'floz',
-        'floz'         => 'floz',
-        'tablespoons'  => 'tbsp',
-        'tablespoon'   => 'tbsp',
-        'teaspoons'    => 'tsp',
-        'teaspoon'     => 'tsp',
-        'milliliters'  => 'ml',
-        'millilitres'  => 'ml',
-        'milliliter'   => 'ml',
-        'millilitre'   => 'ml',
-        'liters'       => 'l',
-        'litres'       => 'l',
-        'liter'        => 'l',
-        'litre'        => 'l',
-        'tbsp'         => 'tbsp',
-        'tbsps'        => 'tbsp',
-        'tbs'          => 'tbsp',
-        'tsp'          => 'tsp',
-        'tsps'         => 'tsp',
-        'cups'         => 'cup',
-        'cup'          => 'cup',
-        'pints'        => 'pint',
-        'pint'         => 'pint',
-        'pts'          => 'pint',
-        'pt'           => 'pint',
-        'quarts'       => 'quart',
-        'quart'        => 'quart',
-        'qts'          => 'quart',
-        'qt'           => 'quart',
-        'gallons'      => 'gallon',
-        'gallon'       => 'gallon',
-        'gal'          => 'gallon',
-        'ml'           => 'ml',
-
-        // Weight
-        'kilograms'    => 'kg',
-        'kilogram'     => 'kg',
-        'kilos'        => 'kg',
-        'kilo'         => 'kg',
-        'grams'        => 'g',
-        'gram'         => 'g',
-        'pounds'       => 'lb',
-        'pound'        => 'lb',
-        'ounces'       => 'oz',
-        'ounce'        => 'oz',
-        'kg'           => 'kg',
-        'gms'          => 'g',
-        'lbs'          => 'lb',
-        'lb'           => 'lb',
-        'gm'           => 'g',
-        'g'            => 'g',
-        'oz'           => 'oz',
-    ];
-
-    /**
-     * Case-sensitive tokens — these are handled separately from the
-     * case-insensitive UNIT_MAP above.
-     *   - `T` (capital, standalone) → tbsp
-     *   - `t` (lower, standalone)  → tsp
-     *   - `L` (capital, standalone) → l
-     *   - `mL` (mixed)             → ml
-     *   - `c` (lower, standalone)  → cup (discouraged)
-     *   - `#` (standalone)         → lb
-     */
-    private const CASE_SENSITIVE_UNITS = [
-        'T'  => 'tbsp',
-        't'  => 'tsp',
-        'L'  => 'l',
-        'mL' => 'ml',
-        'c'  => 'cup',
-        '#'  => 'lb',
     ];
 
     private const UNICODE_FRACTIONS = [
@@ -209,6 +91,10 @@ final class IngredientParser
         '⅝' => 0.625,
         '⅞' => 0.875,
     ];
+
+    public function __construct(
+        private readonly UnitMatcher $unitMatcher = new UnitMatcher,
+    ) {}
 
     public function parseLine(string $line, ?string $group = null): ParsedIngredient
     {
@@ -234,8 +120,7 @@ final class IngredientParser
             $working = trim($m[1]);
         }
 
-        // Step 3: em-dash note split.
-        // Spec: ` — ` (em dash U+2014 with whitespace on both sides) delimits a note.
+        // Step 3: em-dash note split (em dash U+2014 with spaces on both sides).
         if (preg_match('/^(.*?)\s+—\s+(.+)$/u', $working, $m)) {
             $working = trim($m[1]);
             $note = trim($m[2]);
@@ -256,7 +141,7 @@ final class IngredientParser
             );
         }
 
-        // Step 5: generic shape "amount [unit] ingredient [, modifier]"
+        // Step 5: generic shape "amount [unit] ingredient [, modifier]".
         $generic = $this->tryGeneric($working);
         if ($generic !== null) {
             return new ParsedIngredient(
@@ -285,14 +170,11 @@ final class IngredientParser
 
     private function stripBulletMarker(string $line): string
     {
-        // Markdown bullets: `- `, `* `, `+ `, or numbered `1. ` / `1) `.
         return (string) preg_replace('/^\s*(?:[-*+]|\d+[\.)])\s+/', '', $line);
     }
 
     /**
      * Try imprecise quantity shapes. Returns null when no match.
-     * Match order: leading `<imprecise> of …` first (longer phrases first),
-     * then trailing `…, <imprecise>` and `… <imprecise>` (longer first).
      *
      * @return array{unit:string, ingredient:string}|null
      */
@@ -300,7 +182,7 @@ final class IngredientParser
     {
         $textLower = mb_strtolower($text);
 
-        // Leading patterns: "<trigger> <ingredient>"
+        // Leading: "<trigger> <ingredient>"
         foreach (self::IMPRECISE_LEADING as $trigger => $canonical) {
             $triggerLen = strlen($trigger);
             if (str_starts_with($textLower, $trigger.' ')) {
@@ -311,10 +193,8 @@ final class IngredientParser
             }
         }
 
-        // Trailing patterns: "<ingredient>[,] <trigger>"
-        // Try longer triggers first (they're already ordered in the constant).
+        // Trailing: "<ingredient>[,] <trigger>"
         foreach (self::IMPRECISE_TRAILING as $trigger => $canonical) {
-            // Accept optional comma+space or just space before trigger.
             $pattern = '/^(.+?)(?:\s*,)?\s+'.preg_quote($trigger, '/').'\s*$/iu';
             if (preg_match($pattern, $text, $m)) {
                 $ingredient = trim($m[1]);
@@ -328,9 +208,9 @@ final class IngredientParser
     }
 
     /**
-     * Try `<amount> <unit?> <ingredient>[, <modifier>]`.
+     * Try "amount [unit] ingredient [, modifier]".
      *
-     * @return array{amount:float|string|null, amount_high:float|null, unit:string|null, ingredient:string|null, modifier:string|null}|null
+     * @return array{amount:float|null, amount_high:float|null, unit:string|null, ingredient:string|null, modifier:string|null}|null
      */
     private function tryGeneric(string $text): ?array
     {
@@ -350,43 +230,45 @@ final class IngredientParser
             return null;
         }
         if ($rest === '') {
-            // "3" with nothing else — no ingredient, can't parse meaningfully.
             return null;
         }
 
         // Split modifier off first (post-comma).
         $modifier = null;
         if (preg_match('/^(.+?),\s*(.+)$/u', $rest, $mm)) {
-            $beforeComma = trim($mm[1]);
-            $afterComma = trim($mm[2]);
-            $rest = $beforeComma;
-            $modifier = $afterComma;
+            $rest = trim($mm[1]);
+            $modifier = trim($mm[2]);
         }
 
-        // Try to match a canonical unit at the start of $rest (greedy, longest first).
-        $unit = null;
-        $ingredient = $rest;
-
-        $matched = $this->matchUnit($rest);
+        // Ask UnitMatcher to identify the unit at the start of $rest.
+        $matched = $this->unitMatcher->match($rest);
         if ($matched !== null) {
-            $unit = $matched['canonical'];
-            $ingredient = $matched['remainder'];
+            $remainder = trim(substr($rest, strlen($matched->input)));
+            if ($remainder === '') {
+                // Got "1 cup" with no ingredient — not a valid line.
+                return null;
+            }
+            if ($matched->class === UnitClass::COUNT) {
+                // Count noun in first slot: fold to "<rest-after-count-noun> <count-noun>"
+                // per spec ("3 cloves garlic" → "garlic cloves").
+                $ingredient = $remainder.' '.$matched->input;
+                $unit = 'whole';
+            } else {
+                $ingredient = $remainder;
+                $unit = $matched->canonical;
+            }
         } else {
-            // No canonical unit. Per spec resolution R1 + R4 — use unit=whole
-            // for any amount-bearing line with no canonical unit token, and
-            // fold count nouns into the ingredient name regardless of
-            // input word order.
+            // No canonical unit — unit=whole per resolution R1.
             $unit = 'whole';
-            $ingredient = $this->foldCountNouns($rest);
+            $ingredient = $rest;
         }
 
         if ($ingredient === '') {
-            // Got an amount + unit but nothing else — that's not a valid ingredient line.
             return null;
         }
 
         return [
-            'amount' => $amountHigh !== null ? $amount : $amount,
+            'amount' => $amount,
             'amount_high' => $amountHigh,
             'unit' => $unit,
             'ingredient' => $ingredient,
@@ -395,14 +277,14 @@ final class IngredientParser
     }
 
     /**
-     * Returns the amount-token regex fragment (no anchors, no capture-group around it).
+     * Returns the amount-token regex fragment (no anchors, no capture group).
      * The caller wraps it in a capture group.
      */
     private function amountPattern(): string
     {
         $unicodeFracs = implode('', array_keys(self::UNICODE_FRACTIONS));
-        // Order matters — longest forms first so the regex doesn't bail early.
         // Slashes are escaped since the caller uses `/` as the regex delimiter.
+        // Order matters — longer forms first so the regex doesn't bail early.
         return implode('|', [
             '\d+\s+\d+\/\d+',              // mixed: "1 1/2"
             '\d+\/\d+',                    // fraction: "1/2"
@@ -412,103 +294,29 @@ final class IngredientParser
         ]);
     }
 
-    /**
-     * Parse a single amount token (already matched by amountPattern).
-     */
     private function parseAmountToken(string $token): ?float
     {
         $token = trim($token);
 
-        // Mixed: "1 1/2"
         if (preg_match('/^(\d+)\s+(\d+)\/(\d+)$/u', $token, $m)) {
             $denom = (float) $m[3];
             return $denom === 0.0 ? null : (float) $m[1] + (float) $m[2] / $denom;
         }
-        // Unicode mixed: "1½" or "1 ½"
         $unicodeFracs = array_keys(self::UNICODE_FRACTIONS);
         $unicodeClass = implode('', $unicodeFracs);
         if (preg_match('/^(\d+)\s*(['.$unicodeClass.'])$/u', $token, $m)) {
             return (float) $m[1] + self::UNICODE_FRACTIONS[$m[2]];
         }
-        // Unicode fraction alone
         if (mb_strlen($token) === 1 && isset(self::UNICODE_FRACTIONS[$token])) {
             return self::UNICODE_FRACTIONS[$token];
         }
-        // ASCII fraction: "1/2"
         if (preg_match('/^(\d+)\/(\d+)$/u', $token, $m)) {
             $denom = (float) $m[2];
             return $denom === 0.0 ? null : (float) $m[1] / $denom;
         }
-        // Decimal or integer
         if (is_numeric($token)) {
             return (float) $token;
         }
         return null;
-    }
-
-    /**
-     * Try to match a canonical unit at the start of $text.
-     *
-     * @return array{canonical:string, remainder:string}|null
-     */
-    private function matchUnit(string $text): ?array
-    {
-        // 1) Case-sensitive single-letter shortcuts, only when standalone.
-        foreach (self::CASE_SENSITIVE_UNITS as $token => $canonical) {
-            $len = strlen($token);
-            if (substr($text, 0, $len) === $token) {
-                // Standalone check: next char must be whitespace or end-of-string.
-                $next = substr($text, $len, 1);
-                if ($next === '' || ctype_space($next)) {
-                    $remainder = trim(substr($text, $len));
-                    return ['canonical' => $canonical, 'remainder' => $remainder];
-                }
-            }
-        }
-
-        // 2) Case-insensitive map (already ordered longest-first).
-        $textLower = mb_strtolower($text);
-        foreach (self::UNIT_MAP as $spelling => $canonical) {
-            $len = strlen($spelling);
-            if (substr($textLower, 0, $len) === $spelling) {
-                // Boundary: next char must be whitespace or end-of-string.
-                $next = substr($text, $len, 1);
-                if ($next === '' || ctype_space($next)) {
-                    $remainder = trim(substr($text, $len));
-                    // Special-case oz disambiguation: "fl oz" / "fluid oz" was
-                    // already matched as floz before we got here. Plain "oz"
-                    // defaults to weight per spec.
-                    return ['canonical' => $canonical, 'remainder' => $remainder];
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Fold count nouns into the ingredient name per spec Section c.
-     *
-     *   "cloves garlic"      → "garlic cloves"   (count noun in first slot)
-     *   "garlic cloves"      → "garlic cloves"   (already canonical)
-     *   "large onion"        → "large onion"     (no count noun, unchanged)
-     *   "box pasta"          → "box pasta"       (`box` is not a count noun)
-     */
-    private function foldCountNouns(string $text): string
-    {
-        $tokens = preg_split('/\s+/', trim($text));
-        if (! is_array($tokens) || count($tokens) < 2) {
-            return $text;
-        }
-
-        $firstLower = mb_strtolower($tokens[0]);
-        if (in_array($firstLower, self::COUNT_NOUNS, true)) {
-            // Move first token to the end: "cloves garlic" → "garlic cloves"
-            $first = array_shift($tokens);
-            $tokens[] = $first;
-            return implode(' ', $tokens);
-        }
-
-        return $text;
     }
 }

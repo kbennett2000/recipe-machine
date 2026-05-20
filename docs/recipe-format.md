@@ -212,9 +212,9 @@ There are four unit classes. Each canonical form is what downstream code (search
 
 | Canonical | Accepted input spellings (case-insensitive unless noted) |
 |-----------|----------------------------------------------------------|
-| `tsp`     | `tsp`, `tsps`, `teaspoon`, `teaspoons`, `t` (lowercase, standalone) |
-| `tbsp`    | `tbsp`, `tbsps`, `tbs`, `Tbsp`, `T` (uppercase, standalone), `tablespoon`, `tablespoons` |
-| `cup`     | `cup`, `cups`, `c` (standalone — discouraged, see below) |
+| `tsp`     | `tsp`, `tsps`, `teaspoon`, `teaspoons` |
+| `tbsp`    | `tbsp`, `tbsps`, `tbs`, `Tbsp`, `tablespoon`, `tablespoons` |
+| `cup`     | `cup`, `cups` |
 | `floz`    | `fl oz`, `fl. oz.`, `fl oz.`, `floz`, `fluid ounce`, `fluid ounces` |
 | `pint`    | `pint`, `pints`, `pt`, `pts` |
 | `quart`   | `quart`, `quarts`, `qt`, `qts` |
@@ -242,7 +242,7 @@ There are four unit classes. Each canonical form is what downstream code (search
 - `3 garlic cloves` → amount=`3`, unit=`whole`, ingredient=`garlic cloves`
 - `1 large onion` → amount=`1`, unit=`whole`, ingredient=`large onion`
 
-The canonical for unitless counted items is `whole`. Don't confuse this with the `unit=null` case below, which is what the parser emits for tokens that *look* unit-shaped but don't match any canonical (e.g. `1 box pasta` — `box` isn't a canonical unit, so `unit=null`).
+The canonical for unitless counted items is `whole`. Unknown unit-like tokens (`1 box pasta`, `1 stick butter` if `stick` weren't a count noun) also collapse to `unit: whole` rather than `unit: null` — the parser keeps the structured-output unit slot two-valued (a canonical, or `whole`). See "Unknown unit-like tokens" below for the details.
 
 **Imprecise**
 
@@ -271,16 +271,13 @@ The display layer renders these by reading the unit and producing natural prose 
 
 **Closed list.** The canonical imprecise units are the closed list above. A token like `smidge`, `glug`, `dollop`, or `knob` (as in "a knob of butter") does **not** get a canonical assignment. Such lines fall through to the unparseable-line rule (see "Unparseable lines" below); they render verbatim and skip structured features like scaling and shopping-list aggregation. Writers who hit this should either rephrase ("a pat of butter" → "1 Tbsp butter") or accept that the line stays raw until Phase 10's LLM fallback gets to it.
 
-#### `T` vs `t` disambiguation
+#### Single-letter forms not in v1
 
-Some American cookbooks use `T` for tablespoon and `t` for teaspoon. The parser follows this convention **only when the token is standalone** (whitespace on both sides):
+The single-letter abbreviations `T` (tablespoon), `t` (teaspoon), `c` (cup), and `#` (pound) are **not** supported by the v1 parser. Writers must spell out `tbsp`, `tsp`, `cup`, and `lb` (or their full-word forms).
 
-- `1 T salt` → tablespoon
-- `1 t salt` → teaspoon
+A line like `1 T salt` will not be recognized as `1 tablespoon salt`. The `T` will fall through as an unrecognized unit-like token; the line parses to `{amount: 1, unit: whole, ingredient: "T salt"}` — technically valid but semantically meaningless. Writers should rephrase.
 
-When in doubt, the parser favors the longer form: `tsp` and `tbsp` are unambiguous and always preferred over single-letter forms. **Writers are strongly recommended to spell it out** (`tsp`, `tbsp`, or the full word) to avoid the ambiguity entirely. The single-letter forms exist only to tolerate hand-written recipes that already use them.
-
-The single-letter abbreviation `c` for cup is in the canonical table for the same reason — tolerated, but discouraged because it collides with too many ingredient names beginning with "c".
+Rationale: single-letter forms collide with too many ingredient names (`c` with anything starting with c, `T` with case-sensitive readers, `#` with markdown header syntax). The cost of supporting them — case-sensitive matching, special-cased word boundaries, ambiguity with `T`/`t` capitalization — outweighed the benefit for v1. They may be reconsidered in a future version once we have a corpus of real recipes to measure against.
 
 #### `oz` disambiguation (volume vs weight)
 
@@ -293,17 +290,21 @@ When unsure, writers should write `fl oz` for fluid ounce and `oz` for weight.
 
 #### Unknown unit-like tokens
 
-Tokens that don't match any canonical mapping are left as part of the ingredient name. The parser does not invent units. Example: `1 box pasta` — `box` is not a canonical unit, so this parses as amount=`1`, unit=`null`, ingredient=`box pasta`. Writers should rephrase if precision matters (`1 lb pasta`, or `1 16-oz box pasta`).
+Tokens that don't match any canonical mapping are left as part of the ingredient name. The parser does not invent units. Example: `1 box pasta` — `box` is not a canonical unit, so this parses as `{amount: 1, unit: whole, ingredient: "box pasta"}`. The line is parseable (it has an amount and a name) but the unit slot stays `whole` since there's no canonical unit to assign. Writers should rephrase if precision matters (`1 lb pasta`, or `1 16-oz box pasta`).
+
+This is the same rule that handles `1 large onion` — any amount-bearing line without a canonical unit gets `unit: whole`. The unit slot in v1's structured output is two-valued (a canonical, or `whole`), never `null`.
 
 ### Ingredient name and modifier
 
 Everything after the unit is the ingredient name, up to the first comma. After the comma (if any) is the modifier — the preparation state, e.g. `minced`, `softened`, `diced`, `room temperature`, `at room temperature`, `finely chopped`.
 
 ```
-3 cloves garlic, minced
-^   ^      ^       ^
-amt unit   ingr.   modifier
+1 cup butter, softened
+^ ^   ^       ^
+amt unit ingr. modifier
 ```
+
+For lines that exercise count-noun folding, the structured output places the count noun in the ingredient name and `unit: whole` in the unit slot — see "Whole / countable items" below. So `3 cloves garlic, minced` parses to `{amount: 3, unit: whole, ingredient: "garlic cloves", modifier: "minced"}`, not `unit: cloves`.
 
 If there's no comma, there's no modifier; everything past the unit is the ingredient name.
 
