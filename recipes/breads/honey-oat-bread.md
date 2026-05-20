@@ -1,6 +1,6 @@
 ---
 title: Honey Oat Bread
-category: bread
+category: breads
 slug: honey-oat-bread
 servings: "1 loaf"
 yields: 12

@@ -18,7 +18,7 @@ Every recipe begins with a YAML frontmatter block delimited by `---` lines.
 | Field        | Required | Type            | Example                       |
 |--------------|----------|-----------------|-------------------------------|
 | `title`      | yes      | string          | `Honey Oat Bread`             |
-| `category`   | yes      | enum            | `bread`                       |
+| `category`   | yes      | string          | `breads`                      |
 | `slug`       | no       | string          | `honey-oat-bread`             |
 | `servings`   | no       | string          | `"1 loaf"`                    |
 | `prep_time`  | no       | duration string | `20m`                         |
@@ -34,7 +34,13 @@ Every recipe begins with a YAML frontmatter block delimited by `---` lines.
 
 ### Field details
 
-**`category`** — one of: `bread`, `sauce`, `soup`, `entree`, `dessert`, `seafood`. Must match the parent directory (`recipes/<category>/`). Singular form; the directory names are plural (`recipes/breads/`) but the enum value is `bread`.
+**`category`** — a lowercase string matching the parent directory (`recipes/<category>/`).
+
+The **recommended** set is: `breads`, `sauces`, `soups`, `entrees`, `desserts`, `seafood`. The UI groups recipes under these six top-level buckets.
+
+The field is **open**, not enum-constrained. Any lowercase string is permitted, but recipes with a category outside the recommended set are rendered under a single "Other" group in the UI (forward note — not a spec rule the parser enforces). Writers should not need to PR the spec to add a new category. If a new category accumulates enough recipes to deserve top-level placement, it can be promoted to the recommended set as a documentation-only change.
+
+Allowed characters: `^[a-z][a-z0-9-]*$` — lowercase ASCII, digits, and hyphens; must start with a letter. The directory `recipes/<category>/` must exist on disk.
 
 **`slug`** — lowercase, hyphen-separated. If omitted, derived from the filename stem (`honey-oat-bread.md` → `honey-oat-bread`). When present, it must match the filename stem; a mismatch is a parse error.
 
@@ -62,7 +68,7 @@ A loaf of bread can be `servings: "1 loaf"` (display) and `yields: 12` (slices, 
 ```yaml
 ---
 title: Honey Oat Bread
-category: bread
+category: breads
 slug: honey-oat-bread
 servings: "1 loaf"
 yields: 12
@@ -196,13 +202,82 @@ Starting regex (Phase 3 will refine):
 
 ### Unit
 
-Standard recipe units the parser recognizes (case-insensitive, plural-tolerant):
+Everything between the amount and the ingredient name is the unit (optional). Writers spell units however they like; the parser normalizes each input spelling to a single **canonical form** for the structured output. The writer's original spelling is preserved separately for display.
 
-- Volume: `tsp`, `tbsp`/`Tbsp`/`T`, `cup`, `oz` (fluid context), `ml`, `l`, `pint`, `quart`, `gallon`
-- Mass: `oz` (mass context), `lb`, `g`, `kg`
-- Countable: `clove`, `slice`, `sprig`, `head`, `bunch`, `can`, `jar`, `stick`
+#### Canonical units
 
-The parser normalizes case and pluralization internally (e.g., `cups` → `cup`) but preserves the writer's spelling for display. Unknown unit-like tokens are left as part of the ingredient name.
+There are four unit classes. Each canonical form is what downstream code (search, scaling, shopping list) sees.
+
+**Volume**
+
+| Canonical | Accepted input spellings (case-insensitive unless noted) |
+|-----------|----------------------------------------------------------|
+| `tsp`     | `tsp`, `tsps`, `teaspoon`, `teaspoons`, `t` (lowercase, standalone) |
+| `tbsp`    | `tbsp`, `tbsps`, `tbs`, `Tbsp`, `T` (uppercase, standalone), `tablespoon`, `tablespoons` |
+| `cup`     | `cup`, `cups`, `c` (standalone — discouraged, see below) |
+| `floz`    | `fl oz`, `fl. oz.`, `fl oz.`, `floz`, `fluid ounce`, `fluid ounces` |
+| `pint`    | `pint`, `pints`, `pt`, `pts` |
+| `quart`   | `quart`, `quarts`, `qt`, `qts` |
+| `gallon`  | `gallon`, `gallons`, `gal` |
+| `ml`      | `ml`, `mL`, `milliliter`, `milliliters`, `millilitre`, `millilitres` |
+| `l`       | `l`, `L`, `liter`, `liters`, `litre`, `litres` |
+
+**Weight**
+
+| Canonical | Accepted input spellings |
+|-----------|--------------------------|
+| `g`       | `g`, `gram`, `grams`, `gm`, `gms` |
+| `kg`      | `kg`, `kilo`, `kilos`, `kilogram`, `kilograms` |
+| `oz`      | `oz`, `ounce`, `ounces` (mass context — see "oz disambiguation" below) |
+| `lb`      | `lb`, `lbs`, `pound`, `pounds`, `#` |
+
+**Count**
+
+| Canonical | Accepted input spellings |
+|-----------|--------------------------|
+| `whole`   | *(no input spelling — internal marker)* |
+
+`whole` is the parser's internal unit for unitless countable items. The writer never types `whole`; it appears in the parsed output when there's an amount but no unit token before the ingredient name. Example:
+
+- `3 garlic cloves` → amount=`3`, unit=`whole`, ingredient=`garlic cloves`
+- `1 large onion` → amount=`1`, unit=`whole`, ingredient=`large onion`
+
+The canonical for unitless counted items is `whole`. Don't confuse this with the `unit=null` case below, which is what the parser emits for tokens that *look* unit-shaped but don't match any canonical (e.g. `1 box pasta` — `box` isn't a canonical unit, so `unit=null`).
+
+**Imprecise**
+
+| Canonical    | Accepted input spellings |
+|--------------|--------------------------|
+| `pinch`      | `pinch`, `pinches`, `a pinch of`, `pinch of` |
+| `dash`       | `dash`, `dashes`, `splash`, `splashes`, `drizzle`, `a dash of` |
+| `to-taste`   | `to taste`, `to-taste` |
+| `as-needed`  | `as needed`, `as-needed` |
+
+These take the amount slot rather than the unit slot — see "To taste / pinch / as needed" further below for line shape. Tokens like `handful` that don't map to one of the four imprecise canonicals are passed through verbatim with `unit: null` and a warning logged; downstream consumers (shopping list, scaling) should skip them.
+
+#### `T` vs `t` disambiguation
+
+Some American cookbooks use `T` for tablespoon and `t` for teaspoon. The parser follows this convention **only when the token is standalone** (whitespace on both sides):
+
+- `1 T salt` → tablespoon
+- `1 t salt` → teaspoon
+
+When in doubt, the parser favors the longer form: `tsp` and `tbsp` are unambiguous and always preferred over single-letter forms. **Writers are strongly recommended to spell it out** (`tsp`, `tbsp`, or the full word) to avoid the ambiguity entirely. The single-letter forms exist only to tolerate hand-written recipes that already use them.
+
+The single-letter abbreviation `c` for cup is in the canonical table for the same reason — tolerated, but discouraged because it collides with too many ingredient names beginning with "c".
+
+#### `oz` disambiguation (volume vs weight)
+
+The token `oz` could mean fluid ounce (volume) or ounce (weight). The parser disambiguates from context:
+
+- Preceded by a liquid-context cue (`fl`, `fl.`, or one of `fluid`, `fluid ounce`) → `floz`
+- Otherwise → `oz` (weight)
+
+When unsure, writers should write `fl oz` for fluid ounce and `oz` for weight.
+
+#### Unknown unit-like tokens
+
+Tokens that don't match any canonical mapping are left as part of the ingredient name. The parser does not invent units. Example: `1 box pasta` — `box` is not a canonical unit, so this parses as amount=`1`, unit=`null`, ingredient=`box pasta`. Writers should rephrase if precision matters (`1 lb pasta`, or `1 16-oz box pasta`).
 
 ### Ingredient name and modifier
 
@@ -227,37 +302,107 @@ A space-em-dash-space (` — `, U+2014 between two regular spaces) separates the
 Parses to:
 
 - amount: `1`
-- unit: *(none — "large" is part of the ingredient name)*
+- unit: `whole` *("large" is part of the ingredient name, not a unit)*
 - ingredient: `large onion`
 - modifier: `diced`
 - comment: `Vidalia if you can find them`
 
 **Why em dash and not `--` or parentheses:** dashes and parens appear naturally inside ingredient names ("all-purpose flour", "(I-)"); using them as comment delimiters causes collisions. The em dash with surrounding spaces is unambiguous, renders cleanly in markdown, and many editors auto-convert `--` to `—`, so writers rarely need to type it directly.
 
+### Typography and unicode
+
+The parser accepts several typographically distinct characters for the same semantic intent. This subsection enumerates them so writers know what's safe.
+
+#### Unicode fractions
+
+The following Unicode fraction characters are recognized and converted to their decimal equivalent for math:
+
+| Glyph | Codepoint | Decimal | Glyph | Codepoint | Decimal |
+|-------|-----------|---------|-------|-----------|---------|
+| ½     | U+00BD    | 0.5     | ⅙     | U+2159    | 0.16667 |
+| ⅓     | U+2153    | 0.33333 | ⅚     | U+215A    | 0.83333 |
+| ⅔     | U+2154    | 0.66667 | ⅛     | U+215B    | 0.125   |
+| ¼     | U+00BC    | 0.25    | ⅜     | U+215C    | 0.375   |
+| ¾     | U+00BE    | 0.75    | ⅝     | U+215D    | 0.625   |
+| ⅕     | U+2155    | 0.2     | ⅞     | U+215E    | 0.875   |
+| ⅖     | U+2156    | 0.4     |       |           |         |
+| ⅗     | U+2157    | 0.6     |       |           |         |
+| ⅘     | U+2158    | 0.8     |       |           |         |
+
+Other Unicode fraction-like characters (e.g. ⅐, ⅑, ⅒) are not in v1. Use `1/7` etc. if needed.
+
+#### Range separators in amounts
+
+Three dash characters are all valid range separators inside an amount:
+
+| Character     | Codepoint | Name         |
+|---------------|-----------|--------------|
+| `-`           | U+002D    | Hyphen-minus |
+| `–`           | U+2013    | En dash      |
+| `—`           | U+2014    | Em dash      |
+
+All three parse equivalently: `2-3 cups`, `2–3 cups`, and `2—3 cups` all mean "2 to 3 cups". The en dash is the typographically conventional choice for ranges; the parser doesn't care.
+
+**The em dash is overloaded.** It serves two roles in ingredient lines:
+
+1. As a range separator **inside** an amount (no surrounding spaces): `2—3 cups flour`.
+2. As an inline-comment delimiter **between** the structured part and a freeform note (with surrounding spaces): `1 large onion, diced — Vidalia if you can find them`.
+
+The parser distinguishes by context: if the em dash sits between two numeric tokens with no whitespace, it's a range separator; if it has whitespace on both sides and follows the ingredient or modifier, it's a comment delimiter. Writers who want to avoid the overload can use `–` (en dash) for ranges and reserve `—` (em dash) for comments — that's the recommended convention.
+
+#### Mixed fractions with unicode
+
+These three forms all parse to 1.5:
+
+- `1½` — integer + unicode fraction, no space (glyphically attached)
+- `1 ½` — integer + space + unicode fraction
+- `1 1/2` — integer + space + ASCII fraction
+
+Writers should pick one style per file for consistency. The parser doesn't care which.
+
+#### Other Unicode niceties
+
+- **Smart quotes** (`'`, `"`) are accepted in modifiers and comments and preserved as-is. They don't appear in structured fields.
+- **Non-breaking spaces** (U+00A0) are treated as regular spaces by the parser.
+- **Multiplication sign** `×` (U+00D7) is recognized as "by" in dimensions (e.g. a `9×13 inch pan` in `## Notes`), but is not currently parsed for structured output.
+
 ### Whole / countable items
 
 For items without a measurement, the counting noun goes in the ingredient name:
 
-- Preferred: `3 garlic cloves` → amount=`3`, unit=`(none)`, ingredient=`garlic cloves`
-- Also accepted: `3 cloves garlic` → amount=`3`, unit=`cloves`, ingredient=`garlic`
+- Preferred: `3 garlic cloves` → amount=`3`, unit=`whole`, ingredient=`garlic cloves`
+- Also accepted: `3 cloves garlic` → amount=`3`, unit=`whole`, ingredient=`garlic cloves` (the parser folds the count noun back into the ingredient name)
 
-The parser handles both; writers won't be consistent and that's fine. Downstream code treats `clove` as a countable unit either way.
+The parser handles both forms identically; writers won't be consistent and that's fine. Note that `cloves`, `slices`, `sprigs`, `heads`, `bunches`, `cans`, `jars`, `sticks` are recognized as count nouns and folded into the ingredient name rather than living in the unit slot. The canonical unit for any countable item without a measurement is `whole`.
 
 ### Optional items
 
-Mark optional ingredients in either of two ways:
+Mark optional ingredients with either or both of these markers:
 
-- Prefix: `Optional: 1/2 cup walnuts, chopped`
-- Suffix: `1/2 cup walnuts, chopped (optional)`
+- **Prefix:** the line begins with `Optional:` (case-insensitive, followed by whitespace).
+- **Suffix:** the line ends with `(optional)` (case-insensitive, optionally preceded by whitespace).
 
 Both yield `optional: true` in the parsed output. Structured fields are extracted normally; the `optional` flag is set alongside.
+
+#### Idempotence rule
+
+The parser sets `optional: true` **exactly once per item** regardless of how many markers are present. Order doesn't matter. All of the following parse identically:
+
+- `Optional: 1/2 cup walnuts, chopped`
+- `1/2 cup walnuts, chopped (optional)`
+- `Optional: 1/2 cup walnuts, chopped (optional)` *(both markers — redundant, but accepted)*
+- `optional: 1/2 cup walnuts, chopped (Optional)` *(mixed case)*
+
+All four produce: amount=`1/2`, unit=`cup`, ingredient=`walnuts`, modifier=`chopped`, `optional=true`.
+
+The markers themselves are stripped from the structured fields before parsing — `Optional:` does not become part of the amount, and `(optional)` does not become part of the modifier or a comment. Writers who use both markers don't get punished; they just don't get double-flagged.
 
 ### "To taste" / "pinch" / "as needed"
 
 These are amount-like tokens with no numeric value. The canonical forms put them where the amount would go:
 
-- `Salt to taste` → amount=`to taste`, unit=`(none)`, ingredient=`salt`
-- `Pinch of salt` → amount=`pinch`, unit=`(none)`, ingredient=`salt` (the `of` is consumed)
+- `Salt to taste` → amount=`to-taste`, unit=`null`, ingredient=`salt`
+- `Pinch of salt` → amount=`pinch`, unit=`null`, ingredient=`salt` (the `of` is consumed)
 - `Olive oil, as needed` → ingredient=`olive oil`, modifier=`as needed`
 
 Recognized fuzzy amounts: `pinch`, `dash`, `splash`, `handful`, `drizzle`, `to taste`, `as needed`. This is precisely the kind of line where the LLM fallback earns its keep; writers should write naturally.
@@ -326,6 +471,8 @@ Both can coexist; the parser unions and dedupes them by slug. Recommendation: br
 
 References to recipes that don't exist yet are recorded but flagged as unresolved. Resolution (does the slug exist? was the target renamed?) is a Phase 2/3 indexing concern, not a parse-time error.
 
+**Rendering of unresolved references.** When a `[[ref]]` cannot be resolved to an existing recipe, v1 renders it as plain **bold text** with no hyperlink, no tooltip, and no error. Resolution happens at index time and re-runs on every reindex, so a reference that's broken today becomes a working link the moment the target recipe lands.
+
 ---
 
 ## e) File naming
@@ -356,7 +503,7 @@ The file at `recipes/breads/honey-oat-bread.md`:
 ````markdown
 ---
 title: Honey Oat Bread
-category: bread
+category: breads
 slug: honey-oat-bread
 servings: "1 loaf"
 yields: 12
@@ -411,7 +558,7 @@ These were considered and deliberately left unspecified in v1. Each is callable 
 - **Nutrition data.** No calories/macros fields. Out of scope for v1; revisit after Phase 6 (shopping list) when ingredient-level metadata becomes useful.
 - **Equipment lists.** No `## Equipment` section. Mention equipment in `## Notes` if it matters. A structured section may follow.
 - **Explicit timer/temperature syntax.** We rely on regex detection of natural prose ("bake 35–40 minutes at 350°F") rather than tagged syntax like `[timer:35m]`. Keeps writing natural at the cost of some parser fuzziness; the LLM fallback closes the gap.
-- **Unit normalization at parse time.** The parser preserves what the writer wrote (`Tbsp` stays `Tbsp`, `tablespoon` stays `tablespoon`). Normalization to a canonical form happens at query/scaling time, not at parse time.
+- **Scaling math for non-divisible items.** When `yields` represents discrete countable units (e.g. `makes ~30 cookies`, `yields: 30`) and the user requests a non-integer multiplier (e.g. 1.5× to make 45 cookies), most ingredients scale cleanly — but what about an ingredient like `1 egg`? Do we scale to `1.5 eggs` and round at display time ("2 eggs")? Round at math time (so the rest of the recipe is computed against `multiplier = 2/1 = 2`, throwing the proportions off)? Or refuse to scale recipes where the math doesn't land on whole units? **Deferred to Phase 6 (shopping list / scaling).** Decision should fall out of the shopping-list aggregation work, since the same "what's a fractional egg" question shows up there.
 - **Worked-example sub-groups.** The user-supplied worked example (Honey Oat Bread) has no sub-component groups. Sub-groups are demonstrated inline in Section b instead. A future recipe like "French Silk Pie" or "Pan Pizza" is a better canonical sub-group example.
 - **Reference resolution timing.** `[[slug]]` references may point to recipes that don't exist yet. The parser records the reference; resolution is a Phase 2/3 indexing concern, not a parse error.
 - **Multi-language / units (metric vs imperial).** v1 stores whatever the writer used. Dual-unit display and conversion are post-MVP.
