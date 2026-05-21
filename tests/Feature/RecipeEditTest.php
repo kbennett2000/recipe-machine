@@ -218,4 +218,52 @@ final class RecipeEditTest extends IndexedCorpusTestCase
         $response->assertSee(route('recipes.edit', ['recipe' => self::TEST_SLUG]));
         $response->assertSee('Edit', escape: false);
     }
+
+    // === Phase 11D.1 polish smoke tests ===
+    //
+    // The JS-level behavior (Shift+Tab unindent, Esc-out, live syntax
+    // colorization on input) can't be exercised from PHPUnit feature
+    // tests — those need browser-level testing (Playwright/Dusk, which
+    // we're not set up for). These tests confirm the static HTML attributes
+    // are present so the JS has something to bind to. Visual verification
+    // is done via the screenshots in docs/screenshots/p11d1-*.png.
+
+    public function test_edit_form_has_sticky_error_banner_on_failure(): void
+    {
+        // Submit a bad save to trigger the error path, then verify the
+        // re-rendered HTML includes the sticky-banner class.
+        $bad = str_replace('slug: honey-oat-bread', 'slug: typo', $this->originalMarkdown);
+        $this->post('/recipes/'.self::TEST_SLUG.'/edit', ['markdown' => $bad]);
+        $response = $this->followingRedirects()
+            ->get('/recipes/'.self::TEST_SLUG.'/edit');
+        // The redirect-with-errors flow drops the error on the followup
+        // GET. We need to assert against the form-back response directly.
+        $bad2 = str_replace('slug: honey-oat-bread', 'slug: typo2', $this->originalMarkdown);
+        $response = $this->from('/recipes/'.self::TEST_SLUG.'/edit')
+            ->post('/recipes/'.self::TEST_SLUG.'/edit', ['markdown' => $bad2]);
+        // After failBack(), Laravel redirects back; the destination is
+        // the edit page and the session bag carries the error.
+        $followed = $response->assertRedirect()->baseResponse;
+        // Now GET the edit page; the validation errors are still in the
+        // session bag.
+        $afterRedirect = $this->get('/recipes/'.self::TEST_SLUG.'/edit');
+        $afterRedirect->assertSee('sticky top-0', escape: false);
+        $afterRedirect->assertSee('Save failed', escape: false);
+    }
+
+    public function test_edit_form_has_markdown_editor_alpine_component(): void
+    {
+        $response = $this->get('/recipes/'.self::TEST_SLUG.'/edit');
+        $response->assertSee('x-data="markdownEditor()"', escape: false);
+        // The textarea-overlay trick requires the shadow <pre> alongside
+        // the textarea.
+        $response->assertSee('x-ref="shadow"', escape: false);
+        $response->assertSee('x-ref="textarea"', escape: false);
+    }
+
+    public function test_edit_form_has_keydown_handler_for_tab_and_esc(): void
+    {
+        $response = $this->get('/recipes/'.self::TEST_SLUG.'/edit');
+        $response->assertSee('onKeydown($event)', escape: false);
+    }
 }

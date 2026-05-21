@@ -561,4 +561,180 @@ window.cookingMode = function (slug, totalSteps, startStep, defaultServings) {
     };
 };
 
+// ============================================================================
+// Phase 11D.1 — markdown editor enhancements.
+//
+// A small Alpine component that powers the recipe-edit textarea with:
+//   - Syntax cues via a transparent-text textarea + colorized `<pre>`
+//     shadow overlay (the standard editor-overlay trick).
+//   - Tab indents (2 spaces); Shift+Tab unindents; Tab on a selection
+//     indents every line; Shift+Tab on a selection unindents every line.
+//   - Esc moves focus out of the textarea so keyboard users can leave.
+//
+// The textarea is the source of truth — the shadow is decorative. If
+// the regex misses a syntax case the worst outcome is "no color cue,
+// plain text," which is graceful degradation.
+// ============================================================================
+
+window.markdownEditor = function () {
+    return {
+        init() {
+            this.render();
+        },
+
+        render() {
+            const ta = this.$refs.textarea;
+            const shadow = this.$refs.shadow;
+            if (! ta || ! shadow) return;
+            shadow.innerHTML = highlightMarkdown(ta.value);
+            this.syncScroll();
+        },
+
+        syncScroll() {
+            const ta = this.$refs.textarea;
+            const shadow = this.$refs.shadow;
+            if (! ta || ! shadow) return;
+            shadow.scrollTop = ta.scrollTop;
+            shadow.scrollLeft = ta.scrollLeft;
+        },
+
+        onKeydown(ev) {
+            if (ev.key === 'Escape') {
+                ev.preventDefault();
+                ev.target.blur();
+                return;
+            }
+            if (ev.key !== 'Tab') return;
+            ev.preventDefault();
+            const ta = ev.target;
+            const start = ta.selectionStart;
+            const end = ta.selectionEnd;
+            const value = ta.value;
+            const selectionSpansLines = value.substring(start, end).includes('\n')
+                || start !== end;
+
+            if (ev.shiftKey) {
+                // Shift+Tab: unindent. If a selection spans multiple lines,
+                // unindent each. Otherwise unindent the current line only.
+                if (selectionSpansLines) {
+                    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                    const before = value.substring(0, lineStart);
+                    const block = value.substring(lineStart, end);
+                    const after = value.substring(end);
+                    const unindented = block
+                        .split('\n')
+                        .map((l) => l.replace(/^  /, ''))
+                        .join('\n');
+                    ta.value = before + unindented + after;
+                    const delta = block.length - unindented.length;
+                    ta.selectionStart = Math.max(lineStart, start - 2);
+                    ta.selectionEnd = end - delta;
+                } else {
+                    // Single-line unindent: remove up to 2 leading spaces from
+                    // the current line.
+                    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                    const lineHead = value.substring(lineStart, start);
+                    const trimmed = lineHead.replace(/^  /, '');
+                    const removed = lineHead.length - trimmed.length;
+                    ta.value = value.substring(0, lineStart) + trimmed + value.substring(start);
+                    ta.selectionStart = ta.selectionEnd = start - removed;
+                }
+            } else {
+                // Tab: indent.
+                if (selectionSpansLines) {
+                    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                    const before = value.substring(0, lineStart);
+                    const block = value.substring(lineStart, end);
+                    const after = value.substring(end);
+                    const indented = block
+                        .split('\n')
+                        .map((l) => '  ' + l)
+                        .join('\n');
+                    ta.value = before + indented + after;
+                    const delta = indented.length - block.length;
+                    ta.selectionStart = start + 2;
+                    ta.selectionEnd = end + delta;
+                } else {
+                    // Insert 2 spaces at cursor.
+                    ta.value = value.substring(0, start) + '  ' + value.substring(end);
+                    ta.selectionStart = ta.selectionEnd = start + 2;
+                }
+            }
+            this.render();
+        },
+    };
+};
+
+function highlightMarkdown(src) {
+    // Order:
+    //   1. Escape HTML entities so the shadow can't render arbitrary
+    //      markup the user typed.
+    //   2. Process line-by-line so headers, list markers, YAML keys, and
+    //      frontmatter fences match the right context.
+    //   3. Apply inline rules ([[ref]], **bold**) within each line.
+    const esc = (s) => s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    const HASH = 'text-amber-400';
+    const KEY = 'text-amber-400';
+    const MARKER = 'text-stone-400';
+    const FENCE = 'text-stone-500';
+    const REF = 'text-amber-300';
+
+    const lines = src.split('\n').map((raw) => {
+        let line = esc(raw);
+
+        // YAML frontmatter fence (a line of three dashes only).
+        if (/^---\s*$/.test(raw)) {
+            return `<span class="${FENCE}">${line}</span>`;
+        }
+        // YAML key (only colorize the key portion, leave the value plain).
+        const keyMatch = raw.match(/^([a-z_][a-z0-9_]*):(.*)$/);
+        if (keyMatch) {
+            const key = esc(keyMatch[1]);
+            const rest = esc(':' + keyMatch[2]);
+            return `<span class="${KEY}">${key}</span>${applyInline(rest, REF)}`;
+        }
+        // Markdown ATX header: # ... ###### . Color the hashes only.
+        const hMatch = raw.match(/^(#{1,6})(\s.*)?$/);
+        if (hMatch) {
+            const hashes = esc(hMatch[1]);
+            const after = esc(hMatch[2] ?? '');
+            return `<span class="${HASH}">${hashes}</span>${applyInline(after, REF)}`;
+        }
+        // Bullet list marker: "- " at start (or two-space indented).
+        const bulletMatch = raw.match(/^(\s*)([-*+])(\s.*)?$/);
+        if (bulletMatch) {
+            const indent = esc(bulletMatch[1]);
+            const marker = esc(bulletMatch[2]);
+            const after = esc(bulletMatch[3] ?? '');
+            return `${indent}<span class="${MARKER}">${marker}</span>${applyInline(after, REF)}`;
+        }
+        // Numbered list marker: "1. " at start.
+        const numMatch = raw.match(/^(\s*)(\d+\.)(\s.*)?$/);
+        if (numMatch) {
+            const indent = esc(numMatch[1]);
+            const marker = esc(numMatch[2]);
+            const after = esc(numMatch[3] ?? '');
+            return `${indent}<span class="${MARKER}">${marker}</span>${applyInline(after, REF)}`;
+        }
+        return applyInline(line, REF);
+    });
+    // Trailing newline shows as an empty line in the shadow — match the
+    // textarea by leaving the join product as-is.
+    return lines.join('\n') + '\n';
+}
+
+function applyInline(escapedLine, refClass) {
+    // [[bracket-ref]] — already HTML-escaped, so `[[`/`]]` are literal.
+    let out = escapedLine.replace(/\[\[([^\]]+)\]\]/g, (m, inner) => {
+        return `<span class="${refClass}">[[${inner}]]</span>`;
+    });
+    // **bold** — wrap inner in a bold span. Don't recurse.
+    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    return out;
+}
+
 Alpine.start();
