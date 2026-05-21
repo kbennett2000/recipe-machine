@@ -13,18 +13,15 @@ use Illuminate\Console\Command;
  * lines without doing a full reindex. Useful for a quick "we added more
  * recipes; let's classify them" pass between reindexes.
  *
- * --dry-run shows what the LLM would do without writing the cache or
- * mutating any ingredient rows.
- *
- * Like the reindex --with-llm flag, this command no-ops gracefully if
- * the LLM isn't configured (no API key, feature disabled) — it just
- * reports what it would do.
+ * --dry-run is a TRUE preview (Phase 9.1): no API calls, no cache writes,
+ * no row mutations. Just reports what the next live run would do, broken
+ * down by current cache state.
  */
 final class LLMParseFallbackRecipes extends Command
 {
     protected $signature = 'recipes:llm-parse-fallback
-        {--dry-run : Show what would change without writing cache or updating ingredients}
-        {--show-lines : Dump each line with its before/after parse}';
+        {--dry-run : Preview only — no API calls, no cache writes, no row mutations}
+        {--show-lines : Dump each line with its before/after parse (real runs only)}';
 
     protected $description = 'Send currently-unparsed ingredient lines through the Claude fallback parser.';
 
@@ -37,24 +34,24 @@ final class LLMParseFallbackRecipes extends Command
     public function handle(): int
     {
         $rows = Ingredient::query()->where('parsed', false)->orderBy('id')->get();
-        $totalRows = $rows->count();
-
-        if ($totalRows === 0) {
+        if ($rows->isEmpty()) {
             $this->info('No unparsed ingredient lines in the corpus. Nothing to do.');
-            return self::SUCCESS;
-        }
-
-        if (! $this->parser->isEnabled()) {
-            $this->warn('LLM fallback is not enabled (set RECIPE_MACHINE_LLM_FALLBACK=true and ANTHROPIC_API_KEY).');
-            $this->line('Would have submitted '.$totalRows.' unparsed line(s) to the LLM.');
             return self::SUCCESS;
         }
 
         $dryRun = (bool) $this->option('dry-run');
         $showLines = (bool) $this->option('show-lines');
+        $rawLines = $rows->pluck('raw')->unique()->values()->all();
 
         if ($dryRun) {
-            $this->info('Dry run — no DB writes, no cache writes.');
+            $this->renderDryRun($rawLines);
+            return self::SUCCESS;
+        }
+
+        if (! $this->parser->isEnabled()) {
+            $this->warn('LLM fallback is not enabled (set RECIPE_MACHINE_LLM_FALLBACK=true and ANTHROPIC_API_KEY).');
+            $this->line('Would have submitted '.count($rawLines).' unparsed line(s) to the LLM. Use --dry-run for a full preview.');
+            return self::SUCCESS;
         }
 
         if ($showLines) {
@@ -64,11 +61,11 @@ final class LLMParseFallbackRecipes extends Command
             }
         }
 
-        $stats = $this->parser->applyToUnparsedRows($rows, dryRun: $dryRun);
+        $stats = $this->parser->applyToUnparsedRows($rows);
 
         $this->line('');
         $this->line(sprintf(
-            'LLM fallback: %d distinct line(s) submitted, %d parsed, %d cached miss(es), %d still unparsed.',
+            'LLM fallback: %d lines submitted, %d parsed, %d cached misses, %d still unparsed.',
             $stats['submitted'],
             $stats['parsed'],
             $stats['cached_misses'],
@@ -78,9 +75,8 @@ final class LLMParseFallbackRecipes extends Command
             $this->line('  (no API requests made — every line resolved from the cache.)');
         }
 
-        if ($showLines && ! $dryRun) {
+        if ($showLines) {
             $this->line('--- After ---');
-            // Re-fetch so we see the updated state.
             Ingredient::query()->whereIn('id', $rows->pluck('id'))->orderBy('id')->get()->each(function ($r) {
                 $this->line(sprintf('  [%d] parsed=%s llm=%s ingredient=%s',
                     $r->id, $r->parsed ? 'true' : 'false', $r->llm_parsed ? 'true' : 'false', (string) $r->ingredient
@@ -89,5 +85,28 @@ final class LLMParseFallbackRecipes extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  list<string>  $rawLines
+     */
+    private function renderDryRun(array $rawLines): void
+    {
+        $preview = $this->parser->previewBatch($rawLines, sampleSize: 5);
+        $this->line(sprintf('Would submit %d unparsed lines to the LLM fallback.', $preview['total']));
+        if ($preview['sample_to_submit'] !== []) {
+            $this->line('First '.count($preview['sample_to_submit']).' lines:');
+            foreach ($preview['sample_to_submit'] as $line) {
+                $this->line('  - '.$line);
+            }
+        }
+        $cached = $preview['cached_hits'] + $preview['cached_misses'];
+        if ($cached > 0) {
+            $this->line(sprintf(
+                'Of the %d lines, %d are already in the cache (%d hits, %d misses) and would not trigger API calls. %d lines would be submitted.',
+                $preview['total'], $cached, $preview['cached_hits'], $preview['cached_misses'], $preview['would_submit'],
+            ));
+        }
+        $this->line('Run without --dry-run to actually parse.');
     }
 }

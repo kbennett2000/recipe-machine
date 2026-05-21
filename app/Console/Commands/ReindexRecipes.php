@@ -42,7 +42,8 @@ final class ReindexRecipes extends Command
     protected $signature = 'recipes:reindex
         {--path=recipes : Root directory to walk}
         {--print-progress : Print a line per file as it indexes}
-        {--with-llm : After rules-based parsing, run the LLM fallback over remaining unparsed ingredient lines}';
+        {--with-llm : After rules-based parsing, run the LLM fallback over remaining unparsed ingredient lines}
+        {--dry-run : When combined with --with-llm, the LLM pass is a preview only (no API calls, no cache writes, no ingredient row mutations). The rest of the reindex runs normally.}';
 
     protected $description = 'Truncate the recipe cache and reindex every recipes/**/*.md file.';
 
@@ -138,12 +139,18 @@ final class ReindexRecipes extends Command
 
         // Pass 5 (Phase 9, opt-in): LLM fallback for unparsed ingredient
         // lines. Skipped unless --with-llm AND the feature is enabled in
-        // config. Always-on cache lookups mean repeated runs only hit the
-        // API on lines the LLM hasn't seen yet.
+        // config. With --dry-run, this pass becomes a no-side-effects
+        // preview — no API calls, no cache writes, no row mutations.
         $llmStats = null;
+        $llmPreview = null;
         if ((bool) $this->option('with-llm')) {
             $unparsed = \App\Models\Ingredient::query()->where('parsed', false)->get();
-            $llmStats = $this->llmParser->applyToUnparsedRows($unparsed, dryRun: false);
+            $rawLines = $unparsed->pluck('raw')->unique()->values()->all();
+            if ((bool) $this->option('dry-run')) {
+                $llmPreview = $this->llmParser->previewBatch($rawLines, sampleSize: 5);
+            } else {
+                $llmStats = $this->llmParser->applyToUnparsedRows($unparsed);
+            }
         }
 
         $elapsed = microtime(true) - $startedAt;
@@ -161,13 +168,31 @@ final class ReindexRecipes extends Command
             $elapsed,
         ));
         if ($llmStats !== null) {
+            // Disjoint stats (Phase 9.1): parsed + cached_misses + still_unparsed = submitted.
             $this->line(sprintf(
-                'LLM fallback: %d unparsed lines submitted, %d parsed, %d cached misses (re-attemptable in 30 days), %d still unparsed.',
+                'LLM fallback: %d lines submitted, %d parsed, %d cached misses, %d still unparsed.',
                 $llmStats['submitted'],
                 $llmStats['parsed'],
                 $llmStats['cached_misses'],
                 $llmStats['still_unparsed'],
             ));
+        }
+        if ($llmPreview !== null) {
+            $this->line(sprintf('LLM fallback dry-run: would submit %d unparsed lines.', $llmPreview['total']));
+            if ($llmPreview['sample_to_submit'] !== []) {
+                $this->line('First '.count($llmPreview['sample_to_submit']).' lines:');
+                foreach ($llmPreview['sample_to_submit'] as $line) {
+                    $this->line('  - '.$line);
+                }
+            }
+            $cached = $llmPreview['cached_hits'] + $llmPreview['cached_misses'];
+            if ($cached > 0) {
+                $this->line(sprintf(
+                    'Of the %d lines, %d are already in the cache (%d hits, %d misses) and would not trigger API calls. %d lines would be submitted.',
+                    $llmPreview['total'], $cached, $llmPreview['cached_hits'], $llmPreview['cached_misses'], $llmPreview['would_submit'],
+                ));
+            }
+            $this->line('Run without --dry-run to actually parse.');
         }
         if ($totals['skipped'] > 0) {
             $this->warn("Skipped {$totals['skipped']} files with parse errors.");

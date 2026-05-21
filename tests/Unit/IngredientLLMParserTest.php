@@ -294,6 +294,70 @@ final class IngredientLLMParserTest extends TestCase
         $this->assertNull($parser->extractJsonArray('not json at all'));
     }
 
+    public function test_preview_batch_classifies_lines_against_cache(): void
+    {
+        // Seed one hit, one live miss; pass three lines through preview to
+        // confirm the third is reported as "would submit" and the cached
+        // pair are recognized without any HTTP traffic.
+        IngredientLlmCache::create([
+            'raw_line' => 'cached hit line',
+            'raw_line_hash' => IngredientLlmCache::hashFor('cached hit line'),
+            'status' => 'hit',
+            'parsed_payload' => [
+                'amount' => null, 'amount_high' => null, 'unit' => null,
+                'ingredient' => 'whatever', 'modifier' => null,
+                'note' => null, 'optional' => false,
+            ],
+            'model_used' => 'claude-haiku-4-5-20251001',
+        ]);
+        IngredientLlmCache::create([
+            'raw_line' => 'cached miss line',
+            'raw_line_hash' => IngredientLlmCache::hashFor('cached miss line'),
+            'status' => 'miss',
+            'parsed_payload' => null,
+            'model_used' => 'claude-haiku-4-5-20251001',
+            'expires_at' => CarbonImmutable::now()->addDays(15),
+        ]);
+
+        Http::fake(); // would fail if anything got sent
+
+        $parser = new IngredientLLMParser;
+        $preview = $parser->previewBatch([
+            'cached hit line',
+            'cached miss line',
+            'uncached new line',
+        ]);
+
+        $this->assertSame(3, $preview['total']);
+        $this->assertSame(1, $preview['cached_hits']);
+        $this->assertSame(1, $preview['cached_misses']);
+        $this->assertSame(1, $preview['would_submit']);
+        $this->assertSame(['uncached new line'], $preview['sample_to_submit']);
+        Http::assertNothingSent();
+    }
+
+    public function test_preview_batch_treats_expired_tombstone_as_would_submit(): void
+    {
+        IngredientLlmCache::create([
+            'raw_line' => 'expired line',
+            'raw_line_hash' => IngredientLlmCache::hashFor('expired line'),
+            'status' => 'miss',
+            'parsed_payload' => null,
+            'model_used' => 'claude-haiku-4-5-20251001',
+            'expires_at' => CarbonImmutable::now()->subDays(1),
+        ]);
+
+        Http::fake();
+
+        $parser = new IngredientLLMParser;
+        $preview = $parser->previewBatch(['expired line']);
+
+        $this->assertSame(0, $preview['cached_hits']);
+        $this->assertSame(0, $preview['cached_misses']);
+        $this->assertSame(1, $preview['would_submit']);
+        Http::assertNothingSent();
+    }
+
     /**
      * Helper: build an Anthropic-shaped response body wrapping a JSON array.
      *

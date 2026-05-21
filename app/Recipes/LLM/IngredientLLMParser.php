@@ -112,20 +112,23 @@ final class IngredientLLMParser
 
     /**
      * Walk over already-loaded unparsed ingredient rows, batch-parse them
-     * through the LLM, and (unless $dryRun) persist successful parses back
-     * to the DB with llm_parsed=true.
+     * through the LLM, and persist successful parses back to the DB with
+     * llm_parsed=true.
      *
-     * Returns a stats array:
-     *   submitted        - distinct raw lines submitted to the parser
-     *   parsed           - rows the LLM successfully parsed (DB updates)
-     *   cached_misses    - distinct lines that resolved to live tombstones
-     *   still_unparsed   - rows that remain parsed=false after the run
+     * Stats are disjoint — parsed + cached_misses + still_unparsed = submitted:
+     *   submitted        - distinct raw lines we considered
+     *   parsed           - successfully structured (cache hit OR new API hit)
+     *   cached_misses    - LLM tried and returned null/invalid; tombstoned
+     *                      (either an existing live tombstone or a fresh
+     *                      one written by this run)
+     *   still_unparsed   - never got submitted: no API key, transport
+     *                      failure, batch error. These have no cache row.
      *   api_called       - true if any API request actually fired
      *
      * @param  Collection<int,Ingredient>  $rows
      * @return array{submitted:int, parsed:int, cached_misses:int, still_unparsed:int, api_called:bool}
      */
-    public function applyToUnparsedRows(Collection $rows, bool $dryRun = false): array
+    public function applyToUnparsedRows(Collection $rows): array
     {
         $rows = $rows->filter(fn (Ingredient $i) => ! $i->parsed);
         if ($rows->isEmpty()) {
@@ -137,21 +140,18 @@ final class IngredientLLMParser
         $parseMap = $this->parseBatch($rawLines);
         $apiCalled = IngredientLlmCache::count() > $cacheCountBefore;
 
+        // After parseBatch, look up cache rows so we can tell "tried and got
+        // a miss" apart from "never tried" (transport failure or LLM off).
+        $hashes = array_map(IngredientLlmCache::hashFor(...), $rawLines);
+        $cacheRows = IngredientLlmCache::whereIn('raw_line_hash', $hashes)->get()->keyBy('raw_line_hash');
+
         $parsedCount = 0;
         $missCount = 0;
         $stillUnparsedCount = 0;
 
         foreach ($rows as $row) {
             $parsed = $parseMap[$row->raw] ?? null;
-            if ($parsed === null) {
-                $stillUnparsedCount++;
-                if (isset($parseMap[$row->raw])) {
-                    // Resolved (to null) — distinguish cached miss from never-tried.
-                    $missCount++;
-                }
-                continue;
-            }
-            if (! $dryRun) {
+            if ($parsed !== null) {
                 $row->parsed = true;
                 $row->llm_parsed = true;
                 $row->amount = $parsed->amount === null ? null : (float) $parsed->amount;
@@ -163,8 +163,15 @@ final class IngredientLLMParser
                 $row->note = $parsed->note;
                 $row->optional = $parsed->optional;
                 $row->save();
+                $parsedCount++;
+                continue;
             }
-            $parsedCount++;
+            $cache = $cacheRows[IngredientLlmCache::hashFor($row->raw)] ?? null;
+            if ($cache !== null && $cache->status === 'miss') {
+                $missCount++;
+            } else {
+                $stillUnparsedCount++;
+            }
         }
         return [
             'submitted' => count($rawLines),
@@ -172,6 +179,62 @@ final class IngredientLLMParser
             'cached_misses' => $missCount,
             'still_unparsed' => $stillUnparsedCount,
             'api_called' => $apiCalled,
+        ];
+    }
+
+    /**
+     * Classify the supplied raw lines against the cache WITHOUT calling the
+     * API or mutating anything. Drives the --dry-run preview on both
+     * `recipes:llm-parse-fallback` and `recipes:reindex --with-llm`.
+     *
+     * Returns disjoint counts plus a list of the first $sampleSize
+     * "would_submit" lines for the report.
+     *
+     * @param  list<string>  $rawLines
+     * @return array{
+     *     total: int,
+     *     cached_hits: int,
+     *     cached_misses: int,
+     *     would_submit: int,
+     *     sample_to_submit: list<string>
+     * }
+     */
+    public function previewBatch(array $rawLines, int $sampleSize = 5): array
+    {
+        $rawLines = array_values(array_unique(array_filter($rawLines, fn ($l) => is_string($l) && trim($l) !== '')));
+        $total = count($rawLines);
+        if ($total === 0) {
+            return ['total' => 0, 'cached_hits' => 0, 'cached_misses' => 0, 'would_submit' => 0, 'sample_to_submit' => []];
+        }
+        $hashes = array_map(IngredientLlmCache::hashFor(...), $rawLines);
+        $cacheRows = IngredientLlmCache::whereIn('raw_line_hash', $hashes)->get()->keyBy('raw_line_hash');
+
+        $hits = 0;
+        $misses = 0;
+        $wouldSubmit = [];
+        foreach ($rawLines as $line) {
+            $cache = $cacheRows[IngredientLlmCache::hashFor($line)] ?? null;
+            if ($cache === null) {
+                $wouldSubmit[] = $line;
+                continue;
+            }
+            if ($cache->isHit()) {
+                $hits++;
+                continue;
+            }
+            if ($cache->isLiveMiss()) {
+                $misses++;
+                continue;
+            }
+            // Expired tombstone — would be re-attempted next live run.
+            $wouldSubmit[] = $line;
+        }
+        return [
+            'total' => $total,
+            'cached_hits' => $hits,
+            'cached_misses' => $misses,
+            'would_submit' => count($wouldSubmit),
+            'sample_to_submit' => array_slice($wouldSubmit, 0, max(0, $sampleSize)),
         ];
     }
 
