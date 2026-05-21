@@ -11,6 +11,7 @@ use App\Models\RecipeReference;
 use App\Models\RecipeTag;
 use App\Recipes\Display\IngredientFormatter;
 use App\Recipes\Indexing\SeeAlsoComputer;
+use App\Recipes\LLM\IngredientLLMParser;
 use App\Recipes\Parser\RecipeParser;
 use App\Recipes\Parser\UnitClass;
 use App\Recipes\Parser\UnitMatcher;
@@ -40,7 +41,8 @@ final class ReindexRecipes extends Command
 {
     protected $signature = 'recipes:reindex
         {--path=recipes : Root directory to walk}
-        {--print-progress : Print a line per file as it indexes}';
+        {--print-progress : Print a line per file as it indexes}
+        {--with-llm : After rules-based parsing, run the LLM fallback over remaining unparsed ingredient lines}';
 
     protected $description = 'Truncate the recipe cache and reindex every recipes/**/*.md file.';
 
@@ -49,6 +51,7 @@ final class ReindexRecipes extends Command
         private readonly UnitMatcher $unitMatcher = new UnitMatcher,
         private readonly IngredientFormatter $ingredientFormatter = new IngredientFormatter,
         private readonly SeeAlsoComputer $seeAlsoComputer = new SeeAlsoComputer,
+        private readonly IngredientLLMParser $llmParser = new IngredientLLMParser,
     ) {
         parent::__construct();
     }
@@ -133,6 +136,16 @@ final class ReindexRecipes extends Command
         // freshly indexed ingredient sets. Cheap (~milliseconds for 30 recipes).
         $seeAlsoRows = $this->seeAlsoComputer->recompute();
 
+        // Pass 5 (Phase 9, opt-in): LLM fallback for unparsed ingredient
+        // lines. Skipped unless --with-llm AND the feature is enabled in
+        // config. Always-on cache lookups mean repeated runs only hit the
+        // API on lines the LLM hasn't seen yet.
+        $llmStats = null;
+        if ((bool) $this->option('with-llm')) {
+            $unparsed = \App\Models\Ingredient::query()->where('parsed', false)->get();
+            $llmStats = $this->llmParser->applyToUnparsedRows($unparsed, dryRun: false);
+        }
+
         $elapsed = microtime(true) - $startedAt;
 
         $this->line('');
@@ -147,6 +160,15 @@ final class ReindexRecipes extends Command
             $seeAlsoRows,
             $elapsed,
         ));
+        if ($llmStats !== null) {
+            $this->line(sprintf(
+                'LLM fallback: %d unparsed lines submitted, %d parsed, %d cached misses (re-attemptable in 30 days), %d still unparsed.',
+                $llmStats['submitted'],
+                $llmStats['parsed'],
+                $llmStats['cached_misses'],
+                $llmStats['still_unparsed'],
+            ));
+        }
         if ($totals['skipped'] > 0) {
             $this->warn("Skipped {$totals['skipped']} files with parse errors.");
         }

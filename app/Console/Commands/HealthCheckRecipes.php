@@ -284,6 +284,24 @@ final class HealthCheckRecipes extends Command
             }
         }
 
+        // === D-pre. LLM fallback usage (Phase 9) ===
+        $this->line('');
+        $this->line($bar);
+        $this->line('LLM fallback usage');
+        $this->line($bar);
+        $llmRows = \App\Models\Ingredient::query()->where('llm_parsed', true)->count();
+        $cacheHits = 0;
+        $cacheMisses = 0;
+        if (\Illuminate\Support\Facades\Schema::hasTable('ingredient_llm_cache')) {
+            $cacheHits = \App\Models\IngredientLlmCache::where('status', 'hit')->count();
+            $cacheMisses = \App\Models\IngredientLlmCache::where('status', 'miss')->count();
+        }
+        $this->line(sprintf('LLM-parsed ingredient rows in corpus:  %d', $llmRows));
+        $this->line(sprintf('LLM cache:                              %d hit(s), %d tombstone(s)', $cacheHits, $cacheMisses));
+        if ($llmRows === 0 && $cacheHits === 0) {
+            $this->line('  (no LLM fallback runs yet — `recipes:reindex --with-llm` to enable)');
+        }
+
         // === D. Frontmatter completeness ===
         $this->line('');
         $this->line($bar);

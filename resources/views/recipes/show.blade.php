@@ -210,6 +210,13 @@
                                         @if ($ing->modifier !== null)data-modifier="{{ $ing->modifier }}"@endif
                                         @if ($ing->optional)data-optional="1"@endif
                                     >{{ $ingredientFormatter->format($ing) }}</span>
+                                    @if ($ing->llm_parsed)
+                                        {{-- Phase 9: signal that this line was inferred by the LLM
+                                             fallback, not the rules-based parser. Maintainer cue. --}}
+                                        <span class="ml-1 cursor-help text-amber-600 dark:text-amber-400"
+                                              title="Auto-parsed by Claude — verify if it looks off."
+                                              aria-label="auto-parsed">✨</span>
+                                    @endif
                                     @if ($ing->note)
                                         <span class="text-sm text-stone-500 dark:text-stone-500"> — {{ $ing->note }}</span>
                                     @endif
