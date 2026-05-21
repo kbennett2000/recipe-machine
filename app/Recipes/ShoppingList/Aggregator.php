@@ -160,6 +160,7 @@ final class Aggregator
             'unit' => $ing->unit,
             'modifier' => $ing->modifier,
             'optional' => (bool) $ing->optional,
+            'note' => ($ing->note !== null && $ing->note !== '') ? $ing->note : null,
             'source_slug' => $recipe->slug,
             'source_title' => $recipe->title,
         ];
@@ -187,6 +188,9 @@ final class Aggregator
                 'source_slug' => $c['source_slug'],
                 'source_title' => $c['source_title'],
             ], $contributions);
+
+            // For imprecise, notes attach to each contribution inline.
+            $impreciseHasAnyNote = (bool) array_filter($contributions, fn ($c) => ! empty($c['note']));
             $display = $this->renderImpreciseDisplay($bucket['display_name'], $contributions);
 
             return new AggregatedIngredient(
@@ -194,7 +198,8 @@ final class Aggregator
                 aisle: $aisle,
                 quantities: $quantities,
                 optional: $bucket['all_optional'],
-                notes: $bucket['notes'],
+                notes: $impreciseHasAnyNote ? [] : $bucket['notes'],
+                sourceAttribution: '',
                 display: $display,
             );
         }
@@ -208,7 +213,7 @@ final class Aggregator
             $unitClass,
         );
 
-        // For ranges, sum the high bounds too (assumes all contributors with high bounds use the same unit).
+        // For ranges, sum the high bounds too.
         $combinedHigh = null;
         $anyHigh = false;
         foreach ($contributions as $c) {
@@ -226,25 +231,93 @@ final class Aggregator
             $combinedHigh = $combinedHighConv['amount'];
         }
 
-        $sources = $this->orderedUniqueSources($contributions);
+        // Build per-source notes map and determine mode.
+        $notesBySlug = [];
+        $uniqueNotes = [];
+        foreach ($contributions as $c) {
+            if ($c['note'] === null || $c['note'] === '') {
+                continue;
+            }
+            $notesBySlug[$c['source_slug']] = $c['note'];
+            if (! in_array($c['note'], $uniqueNotes, true)) {
+                $uniqueNotes[] = $c['note'];
+            }
+        }
+        // Phase 6.2 rule: when notes DIFFER across contributors (2+ unique
+        // non-empty notes), embed each note inline with its source. When notes
+        // are the same (or only one contributor wrote one), the note renders
+        // once trailing the line.
+        $perSourceMode = count($uniqueNotes) > 1;
+
+        $sources = $this->orderedUniqueContributors($contributions);
+        $sourceAttribution = $this->renderSourceAttribution($sources, $notesBySlug, $perSourceMode);
 
         $quantities = [[
             'amount' => $combined['amount'],
             'amount_high' => $combinedHigh,
             'unit' => $combined['unit'],
-            'sources' => $sources,
+            'sources' => array_map(fn ($s) => $s['title'], $sources),
         ]];
 
-        $display = $this->renderStandardDisplay($bucket['display_name'], $combined, $combinedHigh, $sources);
+        $trailingNotes = $perSourceMode ? [] : $uniqueNotes;
+        $display = $this->renderStandardDisplay(
+            name: $bucket['display_name'],
+            combined: $combined,
+            combinedHigh: $combinedHigh,
+            sourceAttribution: $sourceAttribution,
+            trailingNotes: $trailingNotes,
+        );
 
         return new AggregatedIngredient(
             name: $bucket['display_name'],
             aisle: $aisle,
             quantities: $quantities,
             optional: $bucket['all_optional'],
-            notes: $bucket['notes'],
+            notes: $trailingNotes,
+            sourceAttribution: $sourceAttribution,
             display: $display,
         );
+    }
+
+    /**
+     * Return contributors as `[{slug, title}, ...]` in deterministic slug order.
+     *
+     * @param  array<array<string,mixed>>  $contributions
+     * @return array<array{slug:string,title:string}>
+     */
+    private function orderedUniqueContributors(array $contributions): array
+    {
+        usort($contributions, fn ($a, $b) => strcmp($a['source_slug'], $b['source_slug']));
+        $out = [];
+        $seen = [];
+        foreach ($contributions as $c) {
+            if (isset($seen[$c['source_slug']])) {
+                continue;
+            }
+            $seen[$c['source_slug']] = true;
+            $out[] = ['slug' => $c['source_slug'], 'title' => $c['source_title']];
+        }
+        return $out;
+    }
+
+    /**
+     * @param  array<array{slug:string,title:string}>  $sources
+     * @param  array<string,string>  $notesBySlug
+     */
+    private function renderSourceAttribution(array $sources, array $notesBySlug, bool $perSourceMode): string
+    {
+        if ($sources === []) {
+            return '';
+        }
+        if (! $perSourceMode) {
+            return '('.implode(', ', array_map(fn ($s) => $s['title'], $sources)).')';
+        }
+        $parts = [];
+        foreach ($sources as $s) {
+            $note = $notesBySlug[$s['slug']] ?? null;
+            $parts[] = $note !== null ? $s['title'].' — '.$note : $s['title'];
+        }
+        return '('.implode('; ', $parts).')';
     }
 
     /**
@@ -255,7 +328,11 @@ final class Aggregator
         $parts = [];
         foreach ($contributions as $c) {
             $phrase = $this->imprecisePhrase($c['unit']);
-            $parts[] = $phrase.' ('.$c['source_title'].')';
+            $source = $c['source_title'];
+            if (! empty($c['note'])) {
+                $source .= ' — '.$c['note'];
+            }
+            $parts[] = $phrase.' ('.$source.')';
         }
         return $name.': '.implode(', ', $parts);
     }
@@ -272,16 +349,18 @@ final class Aggregator
 
     /**
      * @param  array{amount: float, unit: string}  $combined
-     * @param  array<string>  $sourceTitles
+     * @param  array<string>  $trailingNotes  Notes to attach at the end of the
+     *   line (empty when notes have been embedded into $sourceAttribution).
      */
-    private function renderStandardDisplay(string $name, array $combined, ?float $combinedHigh, array $sourceTitles): string
+    private function renderStandardDisplay(string $name, array $combined, ?float $combinedHigh, string $sourceAttribution, array $trailingNotes): string
     {
         $amountText = $this->formatter->formatAmount($combined['amount'], $combinedHigh, $combined['unit']);
         $unitText = $combined['unit'] !== '' && $combined['unit'] !== 'whole'
             ? ' '.$this->unitDisplay($combined['unit'], $this->amountIsPlural($combined['amount'], $combinedHigh))
             : '';
-        $sources = $sourceTitles === [] ? '' : ' ('.implode(', ', $sourceTitles).')';
-        return $name.' — '.$amountText.$unitText.$sources;
+        $sourceText = $sourceAttribution !== '' ? ' '.$sourceAttribution : '';
+        $notesText = $trailingNotes !== [] ? ' — '.implode('; ', $trailingNotes) : '';
+        return $name.' — '.$amountText.$unitText.$sourceText.$notesText;
     }
 
     private function unitDisplay(string $unit, bool $plural): string
@@ -303,25 +382,6 @@ final class Aggregator
     {
         $ref = $amountHigh ?? $amount;
         return $ref > 1.0;
-    }
-
-    /**
-     * @param  array<array<string,mixed>>  $contributions
-     * @return array<string>
-     */
-    private function orderedUniqueSources(array $contributions): array
-    {
-        $titles = [];
-        $seen = [];
-        // Sort by source slug for determinism.
-        usort($contributions, fn ($a, $b) => strcmp($a['source_slug'], $b['source_slug']));
-        foreach ($contributions as $c) {
-            if (! isset($seen[$c['source_slug']])) {
-                $seen[$c['source_slug']] = true;
-                $titles[] = $c['source_title'];
-            }
-        }
-        return $titles;
     }
 
     private function canonicalName(string $name): string

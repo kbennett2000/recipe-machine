@@ -108,9 +108,9 @@
                                         <div class="flex-1 min-w-0">
                                             <span class="font-medium" x-text="item.name"></span>
                                             <span x-show="item.optional" class="text-xs italic text-stone-500 dark:text-stone-500"> (optional)</span>
-                                            <template x-if="item.quantities[0] && item.quantities[0].sources">
+                                            <template x-if="item.source_attribution">
                                                 <span class="text-xs text-stone-500 dark:text-stone-500 ml-1.5"
-                                                      x-text="`(${item.quantities[0].sources.join(', ')})`"></span>
+                                                      x-text="item.source_attribution"></span>
                                             </template>
                                             <template x-if="item.notes && item.notes.length">
                                                 <span class="text-xs italic text-stone-500 dark:text-stone-500 ml-1.5"

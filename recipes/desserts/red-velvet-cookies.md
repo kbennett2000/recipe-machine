@@ -19,8 +19,8 @@ tags: []
 - 2 large eggs
 - 3 tablespoons milk
 - 1 tablespoon vanilla extract
-- 4 tablespoons red food coloring or to taste
-- 2 cups dark chocolate chips, or as needed
+- 4 Tbsp red food coloring — adjust to taste
+- 2 cups dark chocolate chips — adjust to taste
 
 ## Method
 

@@ -185,6 +185,101 @@ final class AggregatorTest extends TestCase
         $this->assertSame(0, $list->totalLineCount);
     }
 
+    public function test_same_note_across_recipes_renders_trailing_once(): void
+    {
+        // Both recipes contribute salt with the same note. Display should
+        // collapse to one trailing "— adjust to taste".
+        $this->makeRecipe('a', 'Honey Oat Bread', [
+            ['amount' => 1.5, 'unit' => 'tsp', 'unit_class' => 'volume', 'ingredient' => 'salt', 'note' => 'adjust to taste'],
+        ]);
+        $this->makeRecipe('b', 'Potato Soup', [
+            ['amount' => 0.5, 'unit' => 'tsp', 'unit_class' => 'volume', 'ingredient' => 'salt', 'note' => 'adjust to taste'],
+        ]);
+
+        $list = $this->aggregator->aggregate([['slug' => 'a'], ['slug' => 'b']]);
+        $salt = $this->itemByName($this->flatItems($list), 'Salt');
+        $this->assertNotNull($salt);
+
+        // Source attribution is the plain comma list — no inline notes.
+        $this->assertSame('(Honey Oat Bread, Potato Soup)', $salt->sourceAttribution);
+        // Notes survive as a single trailing entry.
+        $this->assertSame(['adjust to taste'], $salt->notes);
+        // Display matches the brief's expected format.
+        $this->assertSame(
+            'Salt — 2 tsp (Honey Oat Bread, Potato Soup) — adjust to taste',
+            $salt->display,
+        );
+    }
+
+    public function test_one_recipe_has_note_other_does_not_renders_as_single_trailing_note(): void
+    {
+        // One contributor has a note, the other doesn't. This is still "single
+        // unique note" mode — render trailing.
+        $this->makeRecipe('a', 'Honey Oat Bread', [
+            ['amount' => 1.5, 'unit' => 'tsp', 'unit_class' => 'volume', 'ingredient' => 'salt'],
+        ]);
+        $this->makeRecipe('b', 'Potato Soup', [
+            ['amount' => 0.5, 'unit' => 'tsp', 'unit_class' => 'volume', 'ingredient' => 'salt', 'note' => 'adjust to taste'],
+        ]);
+
+        $list = $this->aggregator->aggregate([['slug' => 'a'], ['slug' => 'b']]);
+        $salt = $this->itemByName($this->flatItems($list), 'Salt');
+        $this->assertNotNull($salt);
+        $this->assertSame('(Honey Oat Bread, Potato Soup)', $salt->sourceAttribution);
+        $this->assertSame(['adjust to taste'], $salt->notes);
+    }
+
+    public function test_differing_notes_embed_per_source_in_attribution(): void
+    {
+        // Two recipes, different notes — per-source attribution kicks in.
+        $this->makeRecipe('a', 'Honey Oat Bread', [
+            ['amount' => 1.5, 'unit' => 'tsp', 'unit_class' => 'volume', 'ingredient' => 'salt', 'note' => 'Diamond Crystal only'],
+        ]);
+        $this->makeRecipe('b', 'Potato Soup', [
+            ['amount' => 0.5, 'unit' => 'tsp', 'unit_class' => 'volume', 'ingredient' => 'salt', 'note' => 'adjust to taste'],
+        ]);
+
+        $list = $this->aggregator->aggregate([['slug' => 'a'], ['slug' => 'b']]);
+        $salt = $this->itemByName($this->flatItems($list), 'Salt');
+        $this->assertNotNull($salt);
+        // Per-source attribution embeds the differing notes inline.
+        $this->assertSame(
+            '(Honey Oat Bread — Diamond Crystal only; Potato Soup — adjust to taste)',
+            $salt->sourceAttribution,
+        );
+        // Trailing notes empty — already inline in attribution.
+        $this->assertSame([], $salt->notes);
+        // Full display.
+        $this->assertSame(
+            'Salt — 2 tsp (Honey Oat Bread — Diamond Crystal only; Potato Soup — adjust to taste)',
+            $salt->display,
+        );
+    }
+
+    public function test_three_recipes_two_share_a_note_one_differs(): void
+    {
+        // A and B share a note, C has a different one. Two unique notes → per-source mode.
+        $this->makeRecipe('a', 'A', [
+            ['amount' => 1, 'unit' => 'tsp', 'unit_class' => 'volume', 'ingredient' => 'salt', 'note' => 'adjust to taste'],
+        ]);
+        $this->makeRecipe('b', 'B', [
+            ['amount' => 1, 'unit' => 'tsp', 'unit_class' => 'volume', 'ingredient' => 'salt', 'note' => 'adjust to taste'],
+        ]);
+        $this->makeRecipe('c', 'C', [
+            ['amount' => 1, 'unit' => 'tsp', 'unit_class' => 'volume', 'ingredient' => 'salt', 'note' => 'Diamond Crystal only'],
+        ]);
+
+        $list = $this->aggregator->aggregate([['slug' => 'a'], ['slug' => 'b'], ['slug' => 'c']]);
+        $salt = $this->itemByName($this->flatItems($list), 'Salt');
+        $this->assertNotNull($salt);
+        $this->assertSame(
+            '(A — adjust to taste; B — adjust to taste; C — Diamond Crystal only)',
+            $salt->sourceAttribution,
+            'Three contributors with two distinct notes → all three appear with their notes inline.',
+        );
+        $this->assertSame([], $salt->notes);
+    }
+
     public function test_unparsed_lines_surfaced_with_source(): void
     {
         $this->makeRecipe('a', 'Recipe A', [

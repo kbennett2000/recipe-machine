@@ -16,7 +16,8 @@ final class AggregatedIngredient
      * @param  string  $aisle     One of Aisles::*.
      * @param  array<array{amount: float|null, unit: string|null, source_slug: string, source_title: string}>  $quantities
      * @param  bool    $optional  True only if EVERY contributor marked this ingredient optional.
-     * @param  array<string>  $notes  Inline notes (the ingredient's note field) from contributors.
+     * @param  array<string>  $notes  Inline notes that apply across the aggregated line. Populated only when notes are SAME across contributors (or only one contributor had one). When notes DIFFER between contributors, this is empty and the per-source notes get embedded in `$sourceAttribution` instead. Phase 6.2.
+     * @param  string  $sourceAttribution  Pre-rendered "(Source A, Source B)" or, when notes differ per recipe, "(Source A — note A; Source B — note B)". The view renders this as the parenthetical after the ingredient.
      * @param  string  $display   Rendered shopping-list line (the prerendered fallback string).
      */
     public function __construct(
@@ -25,6 +26,7 @@ final class AggregatedIngredient
         public readonly array $quantities,
         public readonly bool $optional,
         public readonly array $notes,
+        public readonly string $sourceAttribution,
         public readonly string $display,
     ) {}
 
@@ -36,6 +38,7 @@ final class AggregatedIngredient
             'quantities' => $this->quantities,
             'optional' => $this->optional,
             'notes' => $this->notes,
+            'source_attribution' => $this->sourceAttribution,
             'display' => $this->display,
         ];
     }
