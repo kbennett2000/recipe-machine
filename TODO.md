@@ -54,9 +54,27 @@ ships or in a Phase 11 polish pass.
 - [ ] Empty Vanilla Ice Cream + Pasta Sauce method sections. Both
       lack method content in the source codex. Content-side fix
       when the user next cooks them.
+- [ ] Cooking-mode swipe gesture for mobile step navigation. Currently
+      Next/Previous buttons and ←/→/space keyboard nav cover the
+      desktop case; a horizontal-swipe gesture would fit the
+      hands-messy in-kitchen UX better on phones. Needs care around
+      not conflicting with text selection or sidebar scroll.
+- [ ] CookingStepFormatter (and MethodFormatter on the detail page)
+      handle only **bold** + timer/temperature substitution. Inline
+      markdown beyond that — italics, links, inline code, nested
+      lists — renders as raw characters in step views. Becomes a
+      real problem the moment a recipe uses italics in a method
+      step. Audit MethodFormatter, and either extend both formatters
+      or document the supported subset in docs/recipe-format.md.
 
 ## Won't-fix / out-of-scope decisions
 
 - T/t single-letter unit forms (dropped in Phase 2A.1, documented in spec).
 - Audio context unlock on session-restored timer completions
   (rare, silently degrades).
+- AudioContext leak: _beep() creates a new AudioContext per timer
+  completion and never calls .close(). Practically harmless — a
+  single cooking session has 1-3 timers; the accumulation is bounded
+  by the session lifetime and the browser releases on tab close.
+  Adding .close() correctly would require waiting for the envelope
+  to finish, which complicates the helper without practical benefit.
