@@ -263,3 +263,55 @@ cases:
   - name: spec-fold-1-stick-butter
     input: "1 stick butter"
     expected: { parsed: true, amount: 1, unit: whole, ingredient: "butter stick" }
+
+  # ----- Phase 11A.1: "up to N unit X" (upper-bound-only amounts) -----
+  # The IngredientFormatter (Phase 9.2) emits amount_high-only ingredients
+  # with this exact prefix; the parser learns to undo it so LLM-derived
+  # ingredients round-trip through serialize → re-parse cleanly.
+  - name: up-to-lowercase-cup
+    input: "up to 1/4 cup sesame seed oil"
+    expected: { parsed: true, amount: null, amount_high: 0.25, unit: cup, ingredient: "sesame seed oil" }
+
+  - name: up-to-capitalized-tbsp
+    input: "Up to 1 Tbsp lemon juice"
+    expected: { parsed: true, amount: null, amount_high: 1, unit: tbsp, ingredient: "lemon juice" }
+
+  - name: up-to-grams
+    input: "up to 30 g butter"
+    expected: { parsed: true, amount: null, amount_high: 30, unit: g, ingredient: "butter" }
+
+  - name: up-to-count-with-modifier
+    input: "Up to 2 eggs, beaten"
+    expected: { parsed: true, amount: null, amount_high: 2, unit: whole, ingredient: "eggs", modifier: "beaten" }
+
+  - name: up-to-count-multi-word
+    input: "Up to 2 large onions"
+    expected: { parsed: true, amount: null, amount_high: 2, unit: whole, ingredient: "large onions" }
+
+  # Edge case: "up to" without an ingredient name doesn't have anywhere
+  # to put the rest, so the line is unparsed.
+  - name: up-to-no-ingredient
+    input: "up to 1/4 cup"
+    expected: { parsed: false }
+
+  # ----- Phase 11A.1: trailing-period unit abbreviations -----
+  # Recipes in the wild write "1/4 tsp." with a period after the
+  # abbreviation. UnitMatcher now consumes that trailing period as part
+  # of the matched token.
+  - name: trailing-period-tsp
+    input: "1/4 tsp. kosher salt"
+    expected: { parsed: true, amount: 0.25, unit: tsp, ingredient: "kosher salt" }
+
+  - name: trailing-period-tbsp
+    input: "2 Tbsp. butter"
+    expected: { parsed: true, amount: 2, unit: tbsp, ingredient: "butter" }
+
+  - name: trailing-period-lb
+    input: "1 lb. ground beef"
+    expected: { parsed: true, amount: 1, unit: lb, ingredient: "ground beef" }
+
+  # Multi-word spelling already in the table as "fl oz." — exercises that
+  # case directly so we know it didn't regress.
+  - name: trailing-period-fl-oz
+    input: "1 fl oz. vanilla"
+    expected: { parsed: true, amount: 1, unit: floz, ingredient: "vanilla" }

@@ -294,6 +294,35 @@ Tokens that don't match any canonical mapping are left as part of the ingredient
 
 This is the same rule that handles `1 large onion` — any amount-bearing line without a canonical unit gets `unit: whole`. The unit slot in v1's structured output is two-valued (a canonical, or `whole`), never `null`.
 
+#### Trailing-period abbreviations (Phase 11A.1)
+
+Recipes in the wild often write unit abbreviations with a trailing period: `tsp.`, `Tbsp.`, `oz.`, `lb.`, `fl oz.`. The parser accepts the trailing period as part of the matched token and maps to the same canonical form as the period-less spelling:
+
+| Input                  | Canonical |
+|------------------------|-----------|
+| `1/4 tsp. kosher salt` | `tsp`     |
+| `2 Tbsp. butter`       | `tbsp`    |
+| `1 lb. ground beef`    | `lb`      |
+| `1 fl oz. vanilla`     | `floz`    |
+
+The rule is general: any single trailing period before a whitespace boundary or end-of-string is treated as part of the unit token. The period is consumed; the parsed canonical is unchanged.
+
+#### Upper-bound-only amounts (Phase 11A.1)
+
+Recipes sometimes express a soft cap with `Up to N unit X`:
+
+```
+- Up to 1/4 cup toasted sesame seed oil
+```
+
+This parses to `{amount: null, amount_high: 0.25, unit: "cup", ingredient: "toasted sesame seed oil"}` — the value goes into `amount_high` rather than `amount`, signaling that this is an upper bound, not an exact quantity.
+
+The shape is recognized when:
+- The line starts with `up to` (case-insensitive)
+- The remainder parses as a normal `amount + unit + ingredient` structure
+
+The IngredientFormatter renders the structured form back to natural prose with the `up to` prefix automatically — see [docs/llm-fallback.md](llm-fallback.md) for the paired serialization path. Together the two ensure `parse(serialize(parse(x))) === parse(x)` for these shapes, which is the contract the Phase 11A serializer relies on.
+
 ### Ingredient name and modifier
 
 Everything after the unit is the ingredient name, up to the first comma. After the comma (if any) is the modifier — the preparation state, e.g. `minced`, `softened`, `diced`, `room temperature`, `at room temperature`, `finely chopped`.

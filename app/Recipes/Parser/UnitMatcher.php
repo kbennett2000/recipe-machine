@@ -172,14 +172,28 @@ final class UnitMatcher
                     continue;
                 }
                 // Boundary: next char must be whitespace or end-of-string.
+                // Phase 11A.1: also accept a single trailing period before
+                // the boundary — recipes in the wild abbreviate "tsp.",
+                // "Tbsp.", "oz.", "lb." with periods. The period is
+                // consumed as part of the matched token. Multi-word
+                // spellings with periods ("fl oz.", "fl. oz.") are already
+                // explicit entries in the table above.
+                $consumed = $len;
                 $next = substr($token, $len, 1);
+                if ($next === '.') {
+                    $afterDot = substr($token, $len + 1, 1);
+                    if ($afterDot === '' || ctype_space($afterDot)) {
+                        $consumed = $len + 1;
+                        $next = $afterDot;
+                    }
+                }
                 if ($next !== '' && ! ctype_space($next)) {
                     continue;
                 }
                 $candidate = new MatchedUnit(
                     canonical: $canonical,
                     class: $class,
-                    input: substr($token, 0, $len),
+                    input: substr($token, 0, $consumed),
                 );
                 if ($best === null || strlen($candidate->input) > strlen($best->input)) {
                     $best = $candidate;

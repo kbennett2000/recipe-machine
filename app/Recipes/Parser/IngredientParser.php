@@ -166,6 +166,39 @@ final class IngredientParser
             );
         }
 
+        // Step 4.5 (Phase 11A.1): "up to <amount> <unit> <ingredient>"
+        // — the upper-bound-only shape recipes use for soft caps
+        // ("Up to 1/4 cup sesame oil"). The IngredientFormatter renders
+        // amount_high-only ingredients with this exact prefix; the
+        // parser learns to undo that here so LLM-derived ingredients
+        // round-trip through serialize → re-parse cleanly.
+        //
+        // "up to" must be at the START of the working text — a mid-line
+        // "up to" is prose, not a quantity marker. Strip the prefix and
+        // pass the remainder through tryGeneric; if generic parsing
+        // succeeds, swap amount → amount_high.
+        if (preg_match('/^up\s+to\s+(.+)$/iu', $working, $m)) {
+            $upToRemainder = trim($m[1]);
+            $upToParsed = $this->tryGeneric($upToRemainder);
+            if ($upToParsed !== null && $upToParsed['amount'] !== null) {
+                return new ParsedIngredient(
+                    raw: $raw,
+                    parsed: true,
+                    amount: null,
+                    amountHigh: $upToParsed['amount'],
+                    unit: $upToParsed['unit'],
+                    ingredient: $upToParsed['ingredient'],
+                    modifier: $upToParsed['modifier'],
+                    note: $note,
+                    optional: $optional,
+                    group: $group,
+                );
+            }
+            // "up to" prefix present but the remainder didn't yield a
+            // usable amount + ingredient — fall through to the normal
+            // generic path, which will also fail and return parsed:false.
+        }
+
         // Step 5: generic shape "amount [unit] ingredient [, modifier]".
         $generic = $this->tryGeneric($working);
         if ($generic !== null) {

@@ -200,6 +200,36 @@ final class RecipeSerializerTest extends TestCase
         $this->assertContains('pie-crust', $b->crossReferences);
     }
 
+    public function test_llm_derived_amount_high_only_ingredient_round_trips(): void
+    {
+        // Phase 11A.1: an ingredient with amount=null + amount_high set is
+        // the shape the LLM fallback emits for "Up to N unit X" lines. The
+        // IngredientFormatter (Phase 9.2) renders it back as "up to <n> <unit>
+        // <ingredient>", and the rules-based parser (Phase 11A.1) now
+        // recognizes that prefix on re-parse. End-to-end round-trip.
+        $recipe = $this->make(
+            frontmatter: new Frontmatter(title: 'LLM-Style Recipe', category: 'entrees'),
+            ingredients: [
+                new ParsedIngredient(
+                    raw: 'Up to 1/4 cup toasted sesame seed oil',
+                    parsed: true,
+                    amount: null,
+                    amountHigh: 0.25,
+                    unit: 'cup',
+                    ingredient: 'toasted sesame seed oil',
+                ),
+            ],
+            method: ['Drizzle and serve.'],
+        );
+        $b = $this->roundTrip($recipe);
+        $ing = $b->ingredients[0];
+        $this->assertTrue($ing->parsed);
+        $this->assertNull($ing->amount);
+        $this->assertSame(0.25, $ing->amountHigh);
+        $this->assertSame('cup', $ing->unit);
+        $this->assertSame('toasted sesame seed oil', $ing->ingredient);
+    }
+
     public function test_frontmatter_references_round_trip(): void
     {
         // The frontmatter `references:` field is separate from inline brackets.

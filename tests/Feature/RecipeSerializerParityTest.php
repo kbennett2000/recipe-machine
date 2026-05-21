@@ -25,6 +25,13 @@ use PHPUnit\Framework\TestCase;
  *
  * If any recipe fails the round-trip, the test surfaces a diff naming
  * the diverging field so the serializer bug is easy to fix.
+ *
+ * Phase 11A.1: LLM-derived ingredients with amount_high-only shapes
+ * (the "Up to N unit X" pattern) now round-trip cleanly — the parser
+ * was extended to recognize the "up to" prefix and the trailing-period
+ * unit abbreviation. The earlier caveat about LLM-derived lines is
+ * resolved; serialize → re-parse is structurally sound for any shape
+ * the parser produces or the formatter emits.
  */
 final class RecipeSerializerParityTest extends TestCase
 {
