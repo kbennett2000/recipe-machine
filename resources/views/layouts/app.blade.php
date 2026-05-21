@@ -80,6 +80,15 @@
         </header>
 
         <main class="mx-auto w-full max-w-6xl flex-1 px-6 py-10">
+            @if (session('success'))
+                <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 4000)"
+                     class="mb-6 flex items-start justify-between gap-3 rounded border border-emerald-300 bg-emerald-50 px-4 py-3 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                    <p class="text-sm">{{ session('success') }}</p>
+                    <button type="button" @click="show = false"
+                            class="text-emerald-700 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-200"
+                            aria-label="Dismiss">×</button>
+                </div>
+            @endif
             @yield('content')
         </main>
 

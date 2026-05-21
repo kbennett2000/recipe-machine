@@ -22,6 +22,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'shopping-list/calculate',
         ]);
+
+        // Phase 11D: the editor's `markdown` field is the raw recipe
+        // source. TrimStrings (default-enabled) would strip the trailing
+        // newline, breaking round-trip byte-identity through the writer.
+        // Exempt the markdown input so the editor sees exactly what the
+        // user typed.
+        $middleware->trimStrings(except: [
+            'markdown',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

@@ -94,7 +94,7 @@
         @endif
     </header>
 
-    {{-- STEPPER + SHOPPING LIST + COOK BUTTON ROW --}}
+    {{-- STEPPER + SHOPPING LIST + COOK + EDIT BUTTON ROW --}}
     <div class="mb-8 flex items-center gap-5 flex-wrap" x-data="{ slug: '{{ $recipe->slug }}' }">
         @if ($recipe->methodSteps->isNotEmpty())
             <a href="{{ route('recipes.cook', ['recipe' => $recipe->slug]) }}"
@@ -102,6 +102,10 @@
                 <span aria-hidden="true">▶</span> Cook
             </a>
         @endif
+        <a href="{{ route('recipes.edit', ['recipe' => $recipe->slug]) }}"
+           class="inline-flex items-center gap-1.5 text-sm text-stone-600 hover:text-amber-700 dark:text-stone-400 dark:hover:text-amber-400">
+            <span aria-hidden="true">✎</span> Edit
+        </a>
         @if ($recipe->yields !== null && $recipe->yields > 0)
             <div x-data="recipeScale('{{ $recipe->slug }}', {{ $recipe->yields }})" class="flex items-center gap-3 flex-wrap" data-testid="servings-stepper">
                 <label for="servings-input" class="font-medium text-sm text-stone-700 dark:text-stone-300">
