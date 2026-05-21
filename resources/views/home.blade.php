@@ -3,26 +3,63 @@
 @section('title', 'Recipe Machine')
 
 @section('content')
-    <section class="space-y-6">
-        <div>
-            <h1 class="text-4xl font-bold tracking-tight">Recipe Machine</h1>
-            <p class="mt-3 text-lg text-stone-600 dark:text-stone-400">
-                A skeleton awaiting recipes.
-            </p>
-        </div>
+    @php $navCategories = $categories; @endphp
 
-        {{-- Phase 0 Alpine smoke test — remove in Phase 1. --}}
-        <div x-data="{ open: false }" class="rounded-lg border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-stone-900">
-            <button
-                type="button"
-                @click="open = !open"
-                class="inline-flex items-center rounded-md bg-stone-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-stone-700 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-stone-300"
-            >
-                <span x-text="open ? 'Hide' : 'Say hello'"></span>
-            </button>
-            <p x-show="open" x-cloak class="mt-3 text-stone-700 dark:text-stone-300">
-                Hello — Alpine is wired up.
-            </p>
+    <section class="mb-12">
+        <h1 class="font-display text-4xl font-semibold tracking-tight sm:text-5xl">Recipe Machine</h1>
+        <p class="mt-3 text-lg text-stone-600 dark:text-stone-400 max-w-2xl">
+            A self-hosted recipe library. {{ $totalRecipes }} recipes across {{ collect($categories)->where('count', '>', 0)->count() }} categories, parsed from markdown files on disk.
+        </p>
+    </section>
+
+    <section class="mb-14">
+        <h2 class="font-display text-xl font-semibold mb-5 text-stone-900 dark:text-stone-100">Browse by category</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            @foreach ($categories as $cat)
+                @if ($cat['count'] > 0)
+                    <a href="{{ route('categories.show', ['category' => $cat['slug']]) }}"
+                       class="group block rounded-lg border border-stone-200 bg-white p-5 transition hover:border-amber-400 hover:shadow-md dark:border-stone-800 dark:bg-stone-900 dark:hover:border-amber-700">
+                        <div class="flex items-baseline justify-between">
+                            <h3 class="font-display text-xl font-semibold text-stone-900 group-hover:text-amber-700 dark:text-stone-100 dark:group-hover:text-amber-400">
+                                {{ $cat['label'] }}
+                            </h3>
+                            <span class="text-sm font-medium text-stone-500 dark:text-stone-500">
+                                {{ $cat['count'] }} {{ \Illuminate\Support\Str::plural('recipe', $cat['count']) }}
+                            </span>
+                        </div>
+                    </a>
+                @else
+                    <div class="rounded-lg border border-dashed border-stone-200 bg-stone-50 p-5 dark:border-stone-800 dark:bg-stone-900/40">
+                        <div class="flex items-baseline justify-between">
+                            <h3 class="font-display text-xl font-semibold text-stone-400 dark:text-stone-600">
+                                {{ $cat['label'] }}
+                            </h3>
+                            <span class="text-xs uppercase tracking-wider text-stone-400 dark:text-stone-600">
+                                Coming soon
+                            </span>
+                        </div>
+                    </div>
+                @endif
+            @endforeach
         </div>
     </section>
+
+    @if ($recent->isNotEmpty())
+        <section>
+            <h2 class="font-display text-xl font-semibold mb-5 text-stone-900 dark:text-stone-100">Recently updated</h2>
+            <ul class="divide-y divide-stone-200 border-t border-b border-stone-200 dark:divide-stone-800 dark:border-stone-800">
+                @foreach ($recent as $r)
+                    <li>
+                        <a href="{{ route('recipes.show', ['recipe' => $r->slug]) }}"
+                           class="flex items-baseline justify-between gap-3 py-3 hover:text-amber-700 dark:hover:text-amber-400 transition">
+                            <span class="font-display text-base">{{ $r->title }}</span>
+                            <span class="text-xs text-stone-500 dark:text-stone-500 uppercase tracking-wider">
+                                {{ $r->category }}
+                            </span>
+                        </a>
+                    </li>
+                @endforeach
+            </ul>
+        </section>
+    @endif
 @endsection

@@ -8,11 +8,14 @@ export default {
         './resources/**/*.blade.php',
         './resources/**/*.js',
         './resources/**/*.vue',
+        './app/**/*.php',
     ],
     theme: {
         extend: {
             fontFamily: {
-                sans: ['Figtree', ...defaultTheme.fontFamily.sans],
+                sans: ['Inter', ...defaultTheme.fontFamily.sans],
+                display: ['Fraunces', 'Georgia', 'serif'],
+                serif: ['Fraunces', 'Georgia', 'serif'],
             },
         },
     },

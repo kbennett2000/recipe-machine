@@ -3,3 +3,33 @@
 @tailwind utilities;
 
 [x-cloak] { display: none !important; }
+
+/* Method-step metric badges — temperature and timer phrases get visually distinct. */
+.metric {
+    @apply inline-block rounded px-1.5 py-0.5 text-[0.85em] font-medium;
+}
+.metric-temp {
+    @apply bg-rose-100 text-rose-900 dark:bg-rose-900/40 dark:text-rose-200;
+}
+.metric-timer {
+    @apply bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200;
+}
+
+/* Notes section: relaxed reading typography. */
+.prose-notes {
+    @apply text-stone-700 dark:text-stone-300 leading-relaxed;
+}
+.prose-notes p { @apply mb-3; }
+.prose-notes ul { @apply list-disc list-outside ml-6 mb-3 space-y-1; }
+.prose-notes h3 { @apply font-display text-lg font-semibold mt-5 mb-2 text-stone-900 dark:text-stone-100; }
+.prose-notes h4 { @apply font-display text-base font-semibold mt-4 mb-2 text-stone-900 dark:text-stone-100; }
+.prose-notes a {
+    @apply text-amber-700 underline decoration-amber-700/30 underline-offset-2 hover:decoration-amber-700 dark:text-amber-300 dark:decoration-amber-300/30 dark:hover:decoration-amber-300;
+}
+.prose-notes strong { @apply text-stone-900 dark:text-stone-100; }
+.prose-notes code { @apply rounded bg-stone-200 px-1 py-0.5 text-sm dark:bg-stone-800; }
+
+/* Unresolved cross-reference rendering — plain bold per spec d.1. */
+.xref-unresolved {
+    @apply font-semibold text-stone-700 dark:text-stone-300;
+}
