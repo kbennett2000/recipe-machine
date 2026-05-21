@@ -10,6 +10,7 @@ use App\Models\Recipe;
 use App\Models\RecipeReference;
 use App\Models\RecipeTag;
 use App\Recipes\Display\IngredientFormatter;
+use App\Recipes\Indexing\SeeAlsoComputer;
 use App\Recipes\Parser\RecipeParser;
 use App\Recipes\Parser\UnitClass;
 use App\Recipes\Parser\UnitMatcher;
@@ -47,6 +48,7 @@ final class ReindexRecipes extends Command
         private readonly RecipeParser $parser = new RecipeParser,
         private readonly UnitMatcher $unitMatcher = new UnitMatcher,
         private readonly IngredientFormatter $ingredientFormatter = new IngredientFormatter,
+        private readonly SeeAlsoComputer $seeAlsoComputer = new SeeAlsoComputer,
     ) {
         parent::__construct();
     }
@@ -127,17 +129,22 @@ final class ReindexRecipes extends Command
             $searchRows = $this->rebuildSearchIndex();
         }
 
+        // Pass 4 (Phase 8): compute see-also relationships from the
+        // freshly indexed ingredient sets. Cheap (~milliseconds for 30 recipes).
+        $seeAlsoRows = $this->seeAlsoComputer->recompute();
+
         $elapsed = microtime(true) - $startedAt;
 
         $this->line('');
         $this->line(sprintf(
-            'Indexed %d recipes · %d ingredients · %d method steps · %d resolved refs · %d unresolved refs · %d search rows · %.2fs',
+            'Indexed %d recipes · %d ingredients · %d method steps · %d resolved refs · %d unresolved refs · %d search rows · %d see-also links · %.2fs',
             $totals['recipes'],
             $totals['ingredients'],
             $totals['method_steps'],
             $resolved,
             $unresolved,
             $searchRows,
+            $seeAlsoRows,
             $elapsed,
         ));
         if ($totals['skipped'] > 0) {
@@ -151,6 +158,10 @@ final class ReindexRecipes extends Command
     {
         // SQLite doesn't support TRUNCATE; use DELETE and reset auto-increment.
         Schema::disableForeignKeyConstraints();
+        // Drop dependent tables before recipes so FK cascades don't matter.
+        if (Schema::hasTable('recipe_see_alsos')) {
+            DB::table('recipe_see_alsos')->delete();
+        }
         DB::table('recipe_references')->delete();
         DB::table('recipe_tags')->delete();
         DB::table('method_steps')->delete();
@@ -158,7 +169,7 @@ final class ReindexRecipes extends Command
         DB::table('recipes')->delete();
         // Reset auto-increment sequences (SQLite-specific; harmless on other DBs).
         try {
-            DB::statement("DELETE FROM sqlite_sequence WHERE name IN ('recipes','ingredients','method_steps','recipe_tags','recipe_references')");
+            DB::statement("DELETE FROM sqlite_sequence WHERE name IN ('recipes','ingredients','method_steps','recipe_tags','recipe_references','recipe_see_alsos')");
         } catch (\Throwable) {
             // Non-SQLite — ignore.
         }

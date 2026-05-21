@@ -58,7 +58,9 @@ final class CookingModeTest extends IndexedCorpusTestCase
         $response->assertStatus(200);
         // The Alpine init call should embed a clamped integer (not 999).
         $body = $response->getContent();
-        $this->assertDoesNotMatchRegularExpression('/cookingMode\([^)]*,\s*\d+\s*,\s*999\)/', $body);
+        // Phase 7.1 added a 4th arg (defaultServings). Match the 3rd arg
+        // robustly with [^,)]+ separators.
+        $this->assertDoesNotMatchRegularExpression('/cookingMode\([^,)]+,\s*\d+,\s*999[,)]/', $body);
     }
 
     public function test_cook_page_negative_step_is_clamped_to_one(): void
@@ -67,7 +69,8 @@ final class CookingModeTest extends IndexedCorpusTestCase
         $response->assertStatus(200);
         $body = $response->getContent();
         // The third arg to cookingMode(...) is startStep; should be 1, not -5.
-        $this->assertMatchesRegularExpression('/cookingMode\([^)]*,\s*\d+\s*,\s*1\)/', $body);
+        // Phase 7.1 added a 4th arg, so accept either ", 1)" or ", 1, …)".
+        $this->assertMatchesRegularExpression('/cookingMode\([^,)]+,\s*\d+,\s*1[,)]/', $body);
     }
 
     public function test_cook_page_for_zero_method_recipe_shows_placeholder(): void

@@ -31,6 +31,13 @@
             return '**'.$m[1].'**';
         }, $recipe->notes);
 
+        // Phase 8: after explicit bracket refs are resolved, AutoLinker picks
+        // up any bare recipe titles mentioned in prose and wraps the first
+        // occurrence of each in a markdown link. Bracket-resolved links and
+        // existing markdown links/code spans are skipped.
+        $notesText = app(\App\Recipes\Render\AutoLinker::class)
+            ->link($notesText, $autoLinkIndex, $recipe->slug);
+
         // Use Laravel's helper which wraps CommonMark.
         $notesHtml = Str::markdown($notesText);
     }
@@ -273,6 +280,31 @@
                                     {{ $back->recipe->title }}
                                 </a>
                             </li>
+                        @endforeach
+                    </ul>
+                </section>
+            @endif
+
+            {{-- SIMILAR RECIPES (Phase 8 see-also) --}}
+            @if ($recipe->seeAlso->isNotEmpty())
+                <section class="mt-10 border-t border-stone-200 pt-6 dark:border-stone-800" data-testid="similar-recipes">
+                    <h2 class="font-display text-sm font-semibold uppercase tracking-wider text-stone-600 dark:text-stone-400 mb-3">
+                        Similar recipes
+                    </h2>
+                    <ul class="flex flex-wrap gap-3">
+                        @foreach ($recipe->seeAlso as $sa)
+                            @if ($sa->related)
+                                <li>
+                                    <a href="{{ route('recipes.show', ['recipe' => $sa->related->slug]) }}"
+                                       class="block min-w-[180px] rounded-lg border border-stone-200 bg-white px-3 py-2 hover:border-amber-400 hover:bg-amber-50 dark:border-stone-800 dark:bg-stone-900 dark:hover:border-amber-700 dark:hover:bg-amber-950/30">
+                                        <div class="flex items-start justify-between gap-2">
+                                            <span class="font-display font-semibold text-stone-900 dark:text-stone-100">{{ $sa->related->title }}</span>
+                                            <span class="shrink-0 rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-600 dark:bg-stone-800 dark:text-stone-400">{{ $sa->score }}% match</span>
+                                        </div>
+                                        <div class="mt-0.5 text-xs text-stone-500 dark:text-stone-500">{{ ucfirst($sa->related->category) }}</div>
+                                    </a>
+                                </li>
+                            @endif
                         @endforeach
                     </ul>
                 </section>

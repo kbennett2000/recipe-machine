@@ -59,6 +59,12 @@ class Recipe extends Model
         return $this->hasMany(RecipeReference::class, 'resolved_recipe_id');
     }
 
+    /** Phase 8: computed similarity links populated at reindex time. */
+    public function seeAlso(): HasMany
+    {
+        return $this->hasMany(RecipeSeeAlso::class)->orderByDesc('score');
+    }
+
     /**
      * Ingredients grouped by group_name. Top-level (no sub-group) keys to ''.
      *

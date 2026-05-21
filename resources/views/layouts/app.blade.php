@@ -65,8 +65,12 @@
                             </span>
                         @endif
                     @endforeach
+                    <a href="{{ route('recipes.index') }}"
+                       class="border-l border-stone-200 dark:border-stone-700 pl-4 text-stone-600 hover:text-amber-700 dark:text-stone-400 dark:hover:text-amber-400 transition">
+                        Index
+                    </a>
                     <a href="{{ route('shopping-list') }}"
-                       class="border-l border-stone-200 dark:border-stone-700 pl-4 text-stone-700 hover:text-amber-700 dark:text-stone-300 dark:hover:text-amber-400 transition">
+                       class="text-stone-700 hover:text-amber-700 dark:text-stone-300 dark:hover:text-amber-400 transition">
                         Shopping List
                         <span x-show="$store.shoppingList.count > 0" x-cloak
                               x-text="$store.shoppingList.count"

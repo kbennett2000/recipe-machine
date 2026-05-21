@@ -23,13 +23,19 @@ final class RecipeController extends Controller
             'tags',
             'references.resolvedRecipe',
             'referencedBy.recipe',
+            'seeAlso.related',
         ]);
+
+        // Slug → title map for the notes-prose AutoLinker. Cheap to pluck
+        // (30-ish rows); keep it inline rather than caching for now.
+        $autoLinkIndex = Recipe::pluck('title', 'slug')->all();
 
         return view('recipes.show', [
             'recipe' => $recipe,
             'groupedIngredients' => $recipe->groupedIngredients(),
             'ingredientFormatter' => $ingredientFormatter,
             'methodFormatter' => $methodFormatter,
+            'autoLinkIndex' => $autoLinkIndex,
         ]);
     }
 
