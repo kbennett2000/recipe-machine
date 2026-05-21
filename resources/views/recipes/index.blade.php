@@ -62,6 +62,13 @@
                             @endforeach
                         </div>
                     @endif
+
+                    @if ($outgoing->isEmpty() && $incoming->isEmpty())
+                        {{-- Phase 8.1: dim placeholder for isolated rows so
+                             the page has consistent vertical rhythm and the
+                             reader can spot which recipes need cross-links. --}}
+                        <div class="mt-1 text-xs italic text-stone-400 dark:text-stone-600">no cross-links</div>
+                    @endif
                 </li>
             @endforeach
         </ul>

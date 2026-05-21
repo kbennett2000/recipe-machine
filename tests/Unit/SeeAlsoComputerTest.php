@@ -42,39 +42,62 @@ final class SeeAlsoComputerTest extends TestCase
         $this->assertEqualsWithDelta(0.5, $c->jaccard($a, $b), 0.001);
     }
 
-    public function test_three_bread_corpus_picks_strongest_pair(): void
+    public function test_threshold_keeps_strong_pair_drops_borderline(): void
     {
-        // A: 4 ingredients (the baseline lean bread)
-        // B: shares all 4 with A plus 2 extras (highly similar to A)
-        // C: shares only flour with A and B (distant)
+        // Three breads. A and B both have 6 significant ingredients
+        // (source-eligible). C has 3 (target-only). The pairwise Jaccards:
+        //
+        //   A ↔ B: |∩|=4, |∪|=8 → 0.5    → score 50 (above 0.20 threshold)
+        //   A ↔ C: |∩|=1, |∪|=8 → 0.125  → BELOW threshold
+        //   B ↔ C: |∩|=1, |∪|=8 → 0.125  → BELOW threshold
         $a = $this->makeRecipe('bread-a', 'breads', [
-            'flour', 'water', 'salt', 'yeast',
+            'flour', 'water', 'salt', 'yeast', 'butter', 'honey',
         ]);
         $b = $this->makeRecipe('bread-b', 'breads', [
-            'flour', 'water', 'salt', 'yeast', 'honey', 'butter',
+            'flour', 'water', 'salt', 'yeast', 'sugar', 'oil',
         ]);
         $c = $this->makeRecipe('bread-c', 'breads', [
             'flour', 'rye', 'caraway',
         ]);
 
-        $computer = new SeeAlsoComputer;
-        $written = $computer->recompute();
+        (new SeeAlsoComputer)->recompute();
 
-        $this->assertGreaterThan(0, $written);
-
-        // A ↔ B: Jaccard = 4/6 ≈ 0.67 → score ~67
         $aToB = RecipeSeeAlso::where('recipe_id', $a->id)->where('related_recipe_id', $b->id)->value('score');
-        $this->assertNotNull($aToB);
-        $this->assertEqualsWithDelta(67, $aToB, 1);
+        $this->assertNotNull($aToB, 'A↔B should be recorded');
+        $this->assertEqualsWithDelta(50, $aToB, 1);
 
-        // A ↔ C: Jaccard = 1/6 ≈ 0.167 → barely over the 0.15 threshold, score ~17
+        // Borderline pairs that were caught at the old 0.15 threshold drop here.
         $aToC = RecipeSeeAlso::where('recipe_id', $a->id)->where('related_recipe_id', $c->id)->value('score');
-        $this->assertNotNull($aToC);
-        $this->assertLessThan($aToB, $aToC, 'A↔C should score lower than A↔B');
+        $this->assertNull($aToC, 'A↔C jaccard 0.125 is below the 0.20 threshold');
 
-        // B ↔ C: Jaccard = 1/8 = 0.125 → BELOW threshold; no record.
         $bToC = RecipeSeeAlso::where('recipe_id', $b->id)->where('related_recipe_id', $c->id)->value('score');
-        $this->assertNull($bToC, 'B↔C similarity is below threshold; no see-also record should exist');
+        $this->assertNull($bToC, 'B↔C jaccard 0.125 is below the 0.20 threshold');
+    }
+
+    public function test_small_fingerprint_recipes_are_targets_not_sources(): void
+    {
+        // Asymmetric rule: a recipe with fingerprint < 5 doesn't generate
+        // its own see-also rows but can still be the TARGET of another
+        // recipe's similarity. Big (size 10) and Small (size 4) share 3
+        // staples → Jaccard 3/11 ≈ 0.273, above the 0.20 threshold.
+        $big = $this->makeRecipe('big-bread', 'breads', [
+            'flour', 'water', 'salt', 'yeast', 'butter', 'honey', 'milk', 'eggs', 'sugar', 'oats',
+        ]);
+        $small = $this->makeRecipe('small-bread', 'breads', [
+            'flour', 'water', 'salt', 'yeast',
+        ]);
+
+        (new SeeAlsoComputer)->recompute();
+
+        // Big sources a see-also link to Small.
+        $bigToSmall = RecipeSeeAlso::where('recipe_id', $big->id)
+            ->where('related_recipe_id', $small->id)->value('score');
+        $this->assertNotNull($bigToSmall, 'Big (size 10) should source a see-also link to Small (size 4)');
+        $this->assertGreaterThanOrEqual(20, $bigToSmall);
+
+        // Small (size 4) does NOT source any see-also rows.
+        $smallSourced = RecipeSeeAlso::where('recipe_id', $small->id)->count();
+        $this->assertSame(0, $smallSourced, 'Small (size < 5) must not appear as the source of any see-also link');
     }
 
     public function test_cross_category_recipes_do_not_link(): void

@@ -22,16 +22,29 @@ use Illuminate\Support\Facades\DB;
  * soup ↔ potato bread on shared potatoes) is deferred to Phase 8.1 if a
  * compelling case emerges.
  *
- * Threshold + cap: relationships below 0.15 Jaccard are discarded; the
- * top 5 per recipe are kept. The threshold was eyeballed from the bread
- * corpus — it filters out distant cousins that share only one staple
- * (flour, salt) while keeping genuinely overlapping recipes.
+ * Threshold + cap: relationships below SIMILARITY_THRESHOLD Jaccard are
+ * discarded; the top MAX_PER_RECIPE per recipe are kept.
+ *
+ * Tuned from 0.15 to 0.20 in Phase 8.1 — the 0.15-0.20 band over-matched
+ * on shared-staple pairs (any two recipes with flour + sugar + butter +
+ * egg). 0.20 keeps clear within-family matches (breads, cookies) while
+ * dropping the "any sweet baked thing" noise.
+ *
+ * Asymmetric fingerprint-size rule (Phase 8.1): a recipe with fewer than
+ * MIN_FINGERPRINT_AS_SOURCE significant ingredients does not GENERATE
+ * see-also links of its own (its small fingerprint inflates Jaccard noise
+ * when 1-2 staples overlap), but it CAN appear as a target in another
+ * recipe's see-also list. Read: small recipes are recommended, never
+ * recommending.
  */
 final class SeeAlsoComputer
 {
-    public const SIMILARITY_THRESHOLD = 0.15;
+    public const SIMILARITY_THRESHOLD = 0.20;
 
     public const MAX_PER_RECIPE = 5;
+
+    /** Minimum fingerprint size for a recipe to be treated as a SOURCE. */
+    public const MIN_FINGERPRINT_AS_SOURCE = 5;
 
     /** Unit classes worth treating as "real" ingredients for fingerprinting. */
     private const SIGNIFICANT_UNIT_CLASSES = ['volume', 'weight', 'count'];
@@ -53,6 +66,13 @@ final class SeeAlsoComputer
         $now = now();
         $rowsWritten = 0;
         foreach ($fingerprints as $slug => $a) {
+            // Asymmetric source filter (Phase 8.1): small-fingerprint
+            // recipes don't generate their own see-also rows. They can
+            // still be TARGETS — peers loop below considers every same-
+            // category recipe regardless of size.
+            if (count($a['ingredients']) < self::MIN_FINGERPRINT_AS_SOURCE) {
+                continue;
+            }
             $candidates = [];
             $peers = $byCategory[$a['category']] ?? [];
             foreach ($peers as $otherSlug => $b) {
