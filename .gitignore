@@ -24,3 +24,10 @@ yarn-error.log
 .DS_Store
 Thumbs.db
 *.log
+
+# Migration source material — only the migrated output (recipes/**/*.md)
+# is committed. The big source files stay local.
+/migration-source/*
+!/migration-source/breads.md
+!/migration-source/recipes.md
+!/migration-source/.gitkeep
