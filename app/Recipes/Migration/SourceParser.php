@@ -7,16 +7,22 @@ namespace App\Recipes\Migration;
 /**
  * Splits a big source-codex markdown file into per-recipe SourceRecipe sections.
  *
- * Responsibilities:
- *   - Find the top-level `# Title` H1 for category inference.
- *   - Split on `## ` H2 headers; everything between two H2s is one recipe.
- *   - Strip leading `NN.` numeric prefixes from H2 titles.
- *   - Skip sections that are obviously NOT recipes (TOC, contents).
- *   - Strip markdown image references (`![alt](path)`) from bodies — v1 does
- *     not support recipe images and they'd otherwise pollute the round-trip.
+ * Supports two source structures (auto-detected):
  *
- * Does NOT do: frontmatter mining, body normalization, slug-to-output mapping.
- * Those happen downstream in Migrator.
+ *   Flat: `## Recipe 1`, `## Recipe 2`, ...           (the breads codex)
+ *   Hierarchical: `## Category` + `### Recipe`        (the recipes codex)
+ *
+ * Hierarchical detection fires when 2+ of the H2 titles match the recommended
+ * category words (`breads`, `sauces`, `soups`, `entrees`, `desserts`, `seafood`).
+ *
+ * Title normalizations applied during the split:
+ *   - Leading `NN.` numeric prefixes are stripped.
+ *   - A small allowlist of TITLE_FIXUPS rewrites known one-off titles
+ *     (e.g. "Bonus: The Sacred Sourdough Starter Itself" → "Sourdough Starter").
+ *
+ * Pre-processing applied to the whole input:
+ *   - CRLF normalization.
+ *   - Markdown image refs `![alt](path)` stripped (v1 doesn't support images).
  */
 final class SourceParser
 {
@@ -28,51 +34,48 @@ final class SourceParser
     ];
 
     /**
-     * @return array{title: ?string, recipes: array<SourceRecipe>}
+     * Map of pattern → canonical title. Applied to titles BEFORE slugification.
+     * Order matters; first match wins.
+     */
+    private const TITLE_FIXUPS = [
+        // The bread codex has `## Bonus: The Sacred Sourdough Starter Itself`
+        // at H2 level (sibling to other recipes). We want it to land at
+        // recipes/breads/sourdough-starter.md so the boule's references: [sourdough-starter]
+        // resolves cleanly.
+        '/^bonus:.*sourdough\s*starter/i' => 'Sourdough Starter',
+    ];
+
+    private const RECOMMENDED_CATEGORIES = [
+        'breads', 'sauces', 'soups', 'entrees', 'desserts', 'seafood',
+    ];
+
+    /**
+     * @return array{title: ?string, recipes: array<SourceRecipe>, mode: string}
      */
     public function parse(string $markdown): array
     {
-        // Normalize line endings so per-line indices stay consistent.
         $markdown = str_replace(["\r\n", "\r"], "\n", $markdown);
-
-        // Image refs are not supported in v1; strip them before splitting.
         $markdown = (string) preg_replace('/!\[[^\]]*\]\([^)]+\)/u', '', $markdown);
 
         $lines = explode("\n", $markdown);
 
+        // First pass: collect H1 + H2 titles to decide flat vs hierarchical.
         $h1Title = null;
-        $recipes = [];
-        $current = null;
-        $currentLine = 0;
-
-        foreach ($lines as $i => $line) {
-            // First H1 wins; later H1s are unusual but we keep the first.
+        $h2Titles = [];
+        foreach ($lines as $line) {
             if ($h1Title === null && preg_match('/^#(?!#)\s+(.+?)\s*$/', $line, $m)) {
                 $h1Title = trim($m[1]);
                 continue;
             }
-
-            // H2 — start of a new recipe section.
             if (preg_match('/^##(?!#)\s+(.+?)\s*$/', $line, $m)) {
-                // Flush previous section.
-                if ($current !== null) {
-                    $recipes[] = $this->finalize($current, $currentLine);
-                }
-                $rawTitle = $this->stripNumericPrefix(trim($m[1]));
-                $current = ['title' => $rawTitle, 'body' => []];
-                $currentLine = $i + 1;
-                continue;
+                $h2Titles[] = trim($m[1]);
             }
-
-            if ($current !== null) {
-                $current['body'][] = $line;
-            }
-            // Lines before the first H2 (after the H1 and any TOC) are discarded.
         }
 
-        if ($current !== null) {
-            $recipes[] = $this->finalize($current, $currentLine);
-        }
+        $hierarchical = $this->isHierarchical($h2Titles);
+        $recipes = $hierarchical
+            ? $this->splitHierarchical($lines)
+            : $this->splitFlat($lines);
 
         // Drop TOC-like sections.
         $recipes = array_values(array_filter(
@@ -80,26 +83,154 @@ final class SourceParser
             fn (SourceRecipe $r) => ! $this->shouldSkip($r->title),
         ));
 
-        return ['title' => $h1Title, 'recipes' => $recipes];
+        return [
+            'title' => $h1Title,
+            'recipes' => $recipes,
+            'mode' => $hierarchical ? 'hierarchical' : 'flat',
+        ];
     }
 
     /**
-     * Infer a category slug from an H1 codex title.
+     * @param  array<string>  $h2Titles
+     */
+    private function isHierarchical(array $h2Titles): bool
+    {
+        $catCount = 0;
+        foreach ($h2Titles as $title) {
+            $lower = mb_strtolower(trim($title));
+            $cleaned = (string) preg_replace('/[^a-z]+/', '', $lower);
+            foreach (self::RECOMMENDED_CATEGORIES as $cat) {
+                if ($cleaned === $cat) {
+                    $catCount++;
+                    break;
+                }
+            }
+        }
+        return $catCount >= 2;
+    }
+
+    /**
+     * Flat split (breads-codex style): every `## ` is a recipe.
+     *
+     * @param  array<string>  $lines
+     * @return array<SourceRecipe>
+     */
+    private function splitFlat(array $lines): array
+    {
+        $recipes = [];
+        $current = null;
+        $currentLine = 0;
+
+        foreach ($lines as $i => $line) {
+            if (preg_match('/^#(?!#)\s+/', $line)) {
+                // H1 — skip; already captured in first pass.
+                continue;
+            }
+            if (preg_match('/^##(?!#)\s+(.+?)\s*$/', $line, $m)) {
+                if ($current !== null) {
+                    $recipes[] = $this->finalize($current, $currentLine);
+                }
+                $current = ['title' => $this->normalizeTitle($m[1]), 'body' => [], 'category' => null];
+                $currentLine = $i + 1;
+                continue;
+            }
+            if ($current !== null) {
+                $current['body'][] = $line;
+            }
+        }
+        if ($current !== null) {
+            $recipes[] = $this->finalize($current, $currentLine);
+        }
+        return $recipes;
+    }
+
+    /**
+     * Hierarchical split (recipes-codex style): `## Category` then `### Recipe`.
+     *
+     * @param  array<string>  $lines
+     * @return array<SourceRecipe>
+     */
+    private function splitHierarchical(array $lines): array
+    {
+        $recipes = [];
+        $current = null;
+        $currentLine = 0;
+        $currentCategory = null;
+
+        foreach ($lines as $i => $line) {
+            if (preg_match('/^#(?!#)\s+/', $line)) {
+                continue;
+            }
+            // H2 — category divider.
+            if (preg_match('/^##(?!#)\s+(.+?)\s*$/', $line, $m)) {
+                if ($current !== null) {
+                    $recipes[] = $this->finalize($current, $currentLine);
+                    $current = null;
+                }
+                $rawTitle = trim($m[1]);
+                $maybeCat = $this->categoryFromTitle($rawTitle);
+                if ($maybeCat !== null) {
+                    $currentCategory = $maybeCat;
+                } else {
+                    // Non-category H2 (e.g. `## Bonus: ...`) — fall through to treat as a recipe.
+                    $current = [
+                        'title' => $this->normalizeTitle($rawTitle),
+                        'body' => [],
+                        'category' => $currentCategory,
+                    ];
+                    $currentLine = $i + 1;
+                }
+                continue;
+            }
+            // H3 — recipe within current category.
+            if (preg_match('/^###(?!#)\s+(.+?)\s*$/', $line, $m)) {
+                if ($current !== null) {
+                    $recipes[] = $this->finalize($current, $currentLine);
+                }
+                $current = [
+                    'title' => $this->normalizeTitle($m[1]),
+                    'body' => [],
+                    'category' => $currentCategory,
+                ];
+                $currentLine = $i + 1;
+                continue;
+            }
+            if ($current !== null) {
+                $current['body'][] = $line;
+            }
+        }
+        if ($current !== null) {
+            $recipes[] = $this->finalize($current, $currentLine);
+        }
+        return $recipes;
+    }
+
+    /**
+     * Map an H2 category title to its category slug, or null if not a known category.
+     */
+    private function categoryFromTitle(string $title): ?string
+    {
+        $cleaned = mb_strtolower(trim($title));
+        $cleaned = (string) preg_replace('/[^a-z]+/', '', $cleaned);
+        foreach (self::RECOMMENDED_CATEGORIES as $cat) {
+            if ($cleaned === $cat) {
+                return $cat;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Infer a category slug from an H1 codex title (flat-mode only).
      *
      *   "The Official Royal Codex of Kick-Ass Breads"  → "breads"
-     *   "Recipes — Sauces, Soups, Entrees & Desserts"  → null (ambiguous;
-     *                                                     caller must pass --category explicitly)
-     *
-     * The inference looks for one of the six recommended category words
-     * appearing at the end of the title.
+     *   "Recipes — Sauces, Soups, Entrees & Desserts"  → null (ambiguous)
      */
     public function inferCategory(string $h1Title): ?string
     {
-        $recommended = ['breads', 'sauces', 'soups', 'entrees', 'desserts', 'seafood'];
         $lower = mb_strtolower($h1Title);
-
         $matches = [];
-        foreach ($recommended as $cat) {
+        foreach (self::RECOMMENDED_CATEGORIES as $cat) {
             if (preg_match('/\b'.preg_quote($cat, '/').'\b/', $lower)) {
                 $matches[] = $cat;
             }
@@ -115,7 +246,6 @@ final class SourceParser
     public function slugify(string $title): string
     {
         $title = mb_strtolower($title);
-        // Strip diacritics/accents the cheap way.
         $title = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $title) ?: $title;
         $slug = (string) preg_replace('/[^a-z0-9]+/', '-', $title);
         return trim($slug, '-');
@@ -127,12 +257,20 @@ final class SourceParser
             title: $current['title'],
             body: trim(implode("\n", $current['body'])),
             sourceLine: $line,
+            category: $current['category'] ?? null,
         );
     }
 
-    private function stripNumericPrefix(string $title): string
+    private function normalizeTitle(string $title): string
     {
-        return (string) preg_replace('/^\d+\.\s+/', '', $title);
+        $title = trim($title);
+        $title = (string) preg_replace('/^\d+\.\s+/', '', $title);
+        foreach (self::TITLE_FIXUPS as $pattern => $replacement) {
+            if (preg_match($pattern, $title)) {
+                return $replacement;
+            }
+        }
+        return $title;
     }
 
     private function shouldSkip(string $title): bool

@@ -19,5 +19,7 @@ final class SourceRecipe
         public readonly string $body,
         /** Line number in the source file where the `## ` header lives (1-indexed; for error messages). */
         public readonly int $sourceLine = 0,
+        /** Optional per-recipe category, set by SourceParser when in hierarchical mode (`## Category` then `### Recipe`). Null in flat mode — the Migrator falls back to the --category command argument. */
+        public readonly ?string $category = null,
     ) {}
 }

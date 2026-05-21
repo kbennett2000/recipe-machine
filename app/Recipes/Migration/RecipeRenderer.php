@@ -147,7 +147,7 @@ final class RecipeRenderer
         $out = ['## Ingredients', ''];
         foreach ($lines as $line) {
             $trimmed = trim($line);
-            if ($trimmed === '') {
+            if ($trimmed === '' || preg_match('/^[-=_*]{3,}$/', $trimmed)) {
                 continue;
             }
             // Sub-group header passes through verbatim.
@@ -184,12 +184,15 @@ final class RecipeRenderer
             $steps = $this->splitProseIntoSteps($methodInput[0]);
         } else {
             // Already-listed steps. Strip leading bullet/number markers.
+            // Filter out markdown horizontal rules (`---`, `===`, etc.) that
+            // sometimes leak in from the source as section dividers.
             foreach ($methodInput as $raw) {
                 $stripped = (string) preg_replace('/^\s*(?:[-*+]|\d+[\.)])\s+/', '', $raw);
                 $stripped = trim($stripped);
-                if ($stripped !== '') {
-                    $steps[] = $stripped;
+                if ($stripped === '' || preg_match('/^[-=_*]{3,}$/', $stripped)) {
+                    continue;
                 }
+                $steps[] = $stripped;
             }
         }
 

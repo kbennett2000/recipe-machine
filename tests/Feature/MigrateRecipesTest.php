@@ -252,6 +252,13 @@ final class MigrateRecipesTest extends TestCase
         $this->assertStringContainsString('Combine flour and water', $starterFile,
             'Starter body should include the method-prose from the #### How to Create section.');
 
+        // Phase 2B.2 fix: leading intro prose ("A living culture, fed and tended...")
+        // used to be silently dropped by extractLeadingBullets. It now lands in ## Notes.
+        $this->assertStringContainsString('## Notes', $starterFile,
+            'Starter should have a ## Notes section (intro prose preserved as notes).');
+        $this->assertStringContainsString('A living culture', $starterFile,
+            'Intro prose must land in the starter\'s Notes, not be dropped.');
+
         // Parent frontmatter must include references: [sourdough-starter].
         // We check via the round-trip cross_references list rather than parsing
         // YAML by hand — that's exactly what the spec/parser contract guarantees.
@@ -268,6 +275,92 @@ final class MigrateRecipesTest extends TestCase
             'Parent body must not contain the bonus-section header — the split undershot.');
         $this->assertStringNotContainsString('Feed daily for 7 days', $parentFile,
             'Parent body must not contain the starter method prose — the split undershot.');
+    }
+
+    public function test_starter_as_ingredient_does_not_trigger_split(): void
+    {
+        // False-positive guard: a recipe with "1 cup active sourdough starter"
+        // in its ingredient list (or anywhere else) must NOT be treated as the
+        // royal-groktanstelvanian-sourdough-boule and split. Only the exact
+        // slug match triggers splitOutSourdoughStarter.
+        $source = <<<'MD'
+            # The Codex of Breads
+
+            ## Casual Weekday Boule
+
+            - 3 cups bread flour
+            - 1 cup active sourdough starter
+            - 1 tsp salt
+            - 1 cup water
+
+            **Method**: Mix until shaggy. Knead briefly. Bulk ferment 4 hours. Shape and proof 2 hours. Bake at 425F for 30 minutes.
+
+            **Libation**: Whatever's open.
+            MD;
+        $sourcePath = $this->tmpDir.'/casual-boule.md';
+        file_put_contents($sourcePath, $source);
+
+        $migrator = new Migrator;
+        $outcome = $migrator->migrate($sourcePath, 'breads', dryRun: true, outputRoot: $this->outputRoot);
+
+        $this->assertCount(1, $outcome['results'],
+            'A recipe that merely mentions "sourdough starter" in ingredients must not be split.');
+        $this->assertSame('casual-weekday-boule', $outcome['results'][0]->slug);
+        // No phantom sourdough-starter.md should be queued for writing.
+        foreach ($outcome['results'] as $r) {
+            $this->assertNotSame('sourdough-starter', $r->slug);
+        }
+        $this->assertFileDoesNotExist($this->outputRoot.'/breads/sourdough-starter.md');
+    }
+
+    public function test_non_starter_bonus_section_lands_in_notes(): void
+    {
+        // A `### Bonus: <label>` sub-section that is NOT a starter should:
+        //   - keep the parent recipe single (no split into two files)
+        //   - have its content routed into the parent's ## Notes section
+        //   - NOT pollute Ingredients or Method
+        $source = <<<'MD'
+            # The Codex of Breads
+
+            ## Equipment-Heavy Bread
+
+            - 3 cups bread flour
+            - 1 tsp salt
+            - 1 cup warm water
+            - 2 tsp instant yeast
+
+            **Method**: Mix and knead until smooth. Rise 90 minutes. Shape into a loaf. Final proof 45 minutes. Bake at 425F for 30 minutes.
+
+            ### Bonus: Equipment Notes
+
+            Use a banneton if you have one — the rattan texture leaves nice flour marks. A heavy enameled Dutch oven works best for the bake; preheat it for 30 minutes before loading.
+            MD;
+        $sourcePath = $this->tmpDir.'/equipment-bonus.md';
+        file_put_contents($sourcePath, $source);
+
+        $migrator = new Migrator;
+        $outcome = $migrator->migrate($sourcePath, 'breads', dryRun: false, outputRoot: $this->outputRoot);
+
+        $this->assertCount(1, $outcome['results'],
+            'Non-starter bonus sections must NOT cause a recipe split.');
+
+        $file = (string) file_get_contents($outcome['results'][0]->targetPath);
+
+        // Bonus content lands in Notes.
+        $this->assertStringContainsString('## Notes', $file);
+        $this->assertStringContainsString('banneton', $file);
+        $this->assertStringContainsString('Dutch oven', $file);
+
+        // The 'banneton' text must appear AFTER the `## Notes` header — i.e. inside it.
+        $notesPos = strpos($file, '## Notes');
+        $bannetonPos = strpos($file, 'banneton');
+        $this->assertNotFalse($notesPos);
+        $this->assertNotFalse($bannetonPos);
+        $this->assertGreaterThan($notesPos, $bannetonPos,
+            'Bonus content must appear under the ## Notes header, not above it.');
+
+        // No phantom equipment-notes.md.
+        $this->assertFileDoesNotExist($this->outputRoot.'/breads/equipment-notes.md');
     }
 
     public function test_slug_strips_special_characters(): void

@@ -1,0 +1,40 @@
+# Unparsed ingredient lines from the most recent recipes:migrate runs.
+# Combined from migration-source/breads.md and migration-source/recipes.md.
+# This file is the test corpus for Phase 10's LLM-fallback hardening.
+# Regenerated on every migration; committed for visibility.
+
+## From breads.md
+Optional enrichment: 1 egg (for superior moisture and tenderness), extra flour
+Bake 60 minutes at 350°F
+Long room-temperature rise, bake in Dutch oven.
+Braid and egg-wash
+For denser pretzels try 1½ tsp. It'll still rise reliably (just slower, maybe 90–120 minutes instead of 60–90), but you'll get noticeably less puff. If they're still too fluffy, go down to 1 tsp next time for even denser results (rise could take 2+ hours, which also builds better flavor through longer fermentation).
+Baking soda bath (⅔ cup soda in 10 cups water)
+Coarse salt topping
+(Food-grade lye is traditional and superior, but baking soda is safe and effective at home)
+Coarse pretzel salt (or kosher salt)
+Melted butter for brushing after baking
+Long fermentation, high-hydration, Dutch oven bake.
+Yields about 1 1/2 pounds dough (780 g)
+For egg wash & finishing:
+
+## From recipes.md
+chives, extra shredded cheddar cheese and bacon
+Fresh herbs for garnish, I used chopped fresh parsley
+Olive oil
+yields 6 servings
+vegetable oil (such as Crisco®) for frying
+Up to 1/4 cup toasted sesame seed oil
+Kosher salt
+For the Remoulade Sauce
+For the Fried Shrimp
+Canola or Vegetable oil for frying
+For the Po'Boy Assembly
+dill pickles for garnish
+Shredded iceberg lettuce
+Sliced tomatoes
+Original recipe (1X) yields 8 servings
+whipped cream
+This ice cream can easily be dressed up by adding your favorite chopped candies or sprinkles at the end of churning.
+Makes about 7 cups (fourteen ½-cup servings)
+Pinch kosher salt

@@ -70,16 +70,25 @@ final class Migrator
         $parsed = $this->sourceParser->parse($rawSource);
         $codexTitle = $parsed['title'];
         $recipes = $parsed['recipes'];
+        $mode = $parsed['mode'];
 
         $inferredCategory = $codexTitle !== null
             ? $this->sourceParser->inferCategory($codexTitle)
             : null;
 
-        $resolvedCategory = $category === 'auto'
-            ? ($inferredCategory ?? throw new RuntimeException(
-                "Could not infer category from H1 title '{$codexTitle}'. Pass --category=<slug> explicitly."
-            ))
-            : $category;
+        // In hierarchical mode each recipe carries its own category from the
+        // `## Category` divider, so `--category=auto` is always fine. In flat
+        // mode we need an inferable H1 — otherwise the user must pass --category.
+        $defaultCategory = null;
+        if ($mode === 'hierarchical') {
+            $defaultCategory = $category !== 'auto' ? $category : null;
+        } else {
+            $defaultCategory = $category === 'auto'
+                ? ($inferredCategory ?? throw new RuntimeException(
+                    "Could not infer category from H1 title '{$codexTitle}'. Pass --category=<slug> explicitly."
+                ))
+                : $category;
+        }
 
         $results = [];
         $unparsedCorpus = [];
@@ -87,9 +96,16 @@ final class Migrator
         foreach ($recipes as $source) {
             $slug = $this->sourceParser->slugify($source->title);
 
-            // Special-case: sourdough-boule contains an inline starter section
-            // that must come out as its own file. Process the parent first,
-            // then the starter.
+            // Resolve the per-recipe category. Hierarchical mode → use the
+            // category attached to the SourceRecipe; flat mode → the global default.
+            $category = $source->category ?? $defaultCategory
+                ?? throw new RuntimeException(
+                    "No category resolved for recipe '{$source->title}'. Pass --category=<slug> explicitly."
+                );
+
+            // Special-case: sourdough-boule may contain an inline starter section.
+            // (In the real bread codex it's a sibling H2, so this rarely fires —
+            // but the synthetic test-2B.1 fixture exercises the nested case.)
             $starterResult = null;
             $bodyForParent = $source->body;
             if ($slug === 'royal-groktanstelvanian-sourdough-boule') {
@@ -99,16 +115,17 @@ final class Migrator
                         title: 'Sourdough Starter',
                         body: $starterBody,
                         sourceLine: $source->sourceLine,
+                        category: $category,
                     );
-                    $starterResult = $this->migrateOne($starterSource, $resolvedCategory, $dryRun, $outputRoot);
+                    $starterResult = $this->migrateOne($starterSource, $category, $dryRun, $outputRoot);
                 }
             }
 
             $maybeAdjustedSource = $bodyForParent === $source->body
                 ? $source
-                : new SourceRecipe($source->title, $bodyForParent, $source->sourceLine);
+                : new SourceRecipe($source->title, $bodyForParent, $source->sourceLine, $source->category);
 
-            $parentResult = $this->migrateOne($maybeAdjustedSource, $resolvedCategory, $dryRun, $outputRoot);
+            $parentResult = $this->migrateOne($maybeAdjustedSource, $category, $dryRun, $outputRoot);
             $results[] = $parentResult;
             $unparsedCorpus = array_merge($unparsedCorpus, $parentResult->unparsedLines);
 
@@ -134,6 +151,16 @@ final class Migrator
         $slug = $this->sourceParser->slugify($source->title);
         $sections = $this->sectionExtractor->extract($source->body);
         $bodyLines = explode("\n", $source->body);
+
+        // Special case: the sourdough-starter source body is instructional prose
+        // structured as Day 1 / Day 2 / etc. bullets — not a conventional recipe.
+        // The Phase 2B brief specifies routing it to `## Notes`. Override here so
+        // the bullets don't get misclassified as ingredients.
+        if ($slug === 'sourdough-starter') {
+            $sections['ingredients'] = [];
+            $sections['method'] = [];
+            $sections['notes'] = explode("\n", trim($source->body));
+        }
 
         $extracted = $this->frontmatterExtractor->extract($sections['method'], $bodyLines);
 
