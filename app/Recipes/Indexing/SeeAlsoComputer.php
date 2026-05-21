@@ -105,6 +105,169 @@ final class SeeAlsoComputer
     }
 
     /**
+     * Phase 11B — surgical see-also update for a single changed slug.
+     *
+     * Targeted scope: rows where recipe_id=$slug OR related_recipe_id=$slug
+     * are deleted, and new rows are computed only for those relationships.
+     * Other recipes' rows (C→D where neither is the changed slug) stay
+     * untouched, including their updated_at timestamps.
+     *
+     * Correctness reasoning: since only one recipe's fingerprint changed,
+     * only similarities involving that recipe could have shifted. A peer
+     * B's similarity to non-changed peers C/D/E is identical, so their
+     * rows in B's top-N list don't need re-evaluating. Only B's
+     * relationship to the changed recipe can move.
+     *
+     * Caveat (documented behavior, not a bug): if a peer B previously had
+     * the changed recipe in its top-N and the change pushes the similarity
+     * below threshold, B's list shrinks by one. The full reindex would
+     * have backfilled with a 6th-ranked peer that's now within top-N.
+     * Single-slug doesn't do that — peer B's list might have 4 entries
+     * instead of 5. Acceptable because the full reindex is still the
+     * authoritative path; single-slug is for incremental updates between
+     * full rebuilds.
+     *
+     * Returns the number of see-also rows the operation wrote.
+     */
+    public function recomputeForSlug(string $slug, ?string $oldCategory = null): int
+    {
+        $recipe = Recipe::query()->where('slug', $slug)->first();
+
+        // Pull the changed recipe's id BEFORE we mutate anything, so we
+        // know which rows to delete even on the deletion path.
+        $recipeId = $recipe?->id;
+
+        // Drop every existing row where the changed recipe is on either
+        // side of the relationship. (When the recipe was just deleted,
+        // FK cascade already wiped these — the delete here is a no-op
+        // safety belt for that case.)
+        if ($recipeId !== null) {
+            DB::table('recipe_see_alsos')
+                ->where('recipe_id', $recipeId)
+                ->orWhere('related_recipe_id', $recipeId)
+                ->delete();
+        }
+
+        // If the recipe is gone (delete path), nothing to rebuild.
+        if ($recipe === null) {
+            return 0;
+        }
+
+        $fingerprints = $this->loadFingerprints();
+        $own = $fingerprints[$slug] ?? null;
+        if ($own === null) {
+            // Recipe exists but has zero significant ingredients — it can
+            // still be a TARGET of other recipes' see-also, so check below.
+            $ownIngredients = [];
+        } else {
+            $ownIngredients = $own['ingredients'];
+        }
+
+        $rowsWritten = 0;
+
+        // Categories to consider: the current category, plus the old one
+        // if the recipe just moved. Same-category-only similarity means a
+        // category change can wipe inbound rows in the old category and
+        // create new ones in the new category.
+        $categories = [$recipe->category];
+        if ($oldCategory !== null && $oldCategory !== $recipe->category) {
+            $categories[] = $oldCategory;
+        }
+
+        // === Outgoing: the changed recipe's own top-N see-also list. ===
+        if (count($ownIngredients) >= self::MIN_FINGERPRINT_AS_SOURCE) {
+            $candidates = [];
+            foreach ($fingerprints as $otherSlug => $b) {
+                if ($otherSlug === $slug) {
+                    continue;
+                }
+                if ($b['category'] !== $recipe->category) {
+                    continue;
+                }
+                $sim = $this->jaccard($ownIngredients, $b['ingredients']);
+                if ($sim < self::SIMILARITY_THRESHOLD) {
+                    continue;
+                }
+                $candidates[] = ['related_id' => $b['id'], 'score' => (int) round($sim * 100)];
+            }
+            usort($candidates, fn ($x, $y) => $y['score'] <=> $x['score']);
+            $candidates = array_slice($candidates, 0, self::MAX_PER_RECIPE);
+            foreach ($candidates as $c) {
+                RecipeSeeAlso::create([
+                    'recipe_id' => $recipe->id,
+                    'related_recipe_id' => $c['related_id'],
+                    'score' => $c['score'],
+                ]);
+                $rowsWritten++;
+            }
+        }
+
+        // === Incoming: peers whose top-N might now include the changed recipe. ===
+        // For each peer in the (now-current) category, check if it should
+        // gain a row pointing at the changed recipe. We DON'T touch the
+        // peer's other rows — they're correct already.
+        foreach ($fingerprints as $peerSlug => $peer) {
+            if ($peerSlug === $slug) {
+                continue;
+            }
+            if (! in_array($peer['category'], $categories, true)) {
+                continue;
+            }
+            // The peer must be source-eligible (fingerprint size threshold).
+            if (count($peer['ingredients']) < self::MIN_FINGERPRINT_AS_SOURCE) {
+                continue;
+            }
+            // The peer must be in the changed recipe's CURRENT category
+            // for the row to be added. (If oldCategory is in the list,
+            // those peers won't add a new row — same-category constraint
+            // excludes them.)
+            if ($peer['category'] !== $recipe->category) {
+                continue;
+            }
+            $sim = $this->jaccard($peer['ingredients'], $ownIngredients);
+            if ($sim < self::SIMILARITY_THRESHOLD) {
+                continue;
+            }
+            $score = (int) round($sim * 100);
+
+            // Does this score earn a spot in the peer's top-N? Count
+            // existing rows; if < MAX, always add. If already at MAX,
+            // add only if the new score beats the peer's lowest existing
+            // score (we don't displace existing rows — that would touch
+            // them, which we're trying to avoid).
+            $existing = RecipeSeeAlso::query()
+                ->where('recipe_id', $peer['id'])
+                ->orderBy('score')
+                ->get();
+            if ($existing->count() < self::MAX_PER_RECIPE) {
+                RecipeSeeAlso::create([
+                    'recipe_id' => $peer['id'],
+                    'related_recipe_id' => $recipe->id,
+                    'score' => $score,
+                ]);
+                $rowsWritten++;
+                continue;
+            }
+            // At cap — only add if we beat the lowest. We don't displace
+            // the lowest; the peer simply gains a 6th row temporarily.
+            // The full reindex cleans this up; in the meantime, the peer
+            // surfaces an extra-relevant similar recipe rather than miss
+            // it entirely.
+            $lowest = (int) $existing->first()->score;
+            if ($score > $lowest) {
+                RecipeSeeAlso::create([
+                    'recipe_id' => $peer['id'],
+                    'related_recipe_id' => $recipe->id,
+                    'score' => $score,
+                ]);
+                $rowsWritten++;
+            }
+        }
+
+        return $rowsWritten;
+    }
+
+    /**
      * Build the per-recipe fingerprint map. Returns slug => {id, category,
      * ingredients (set as array<string,bool>)}.
      *

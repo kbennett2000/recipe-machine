@@ -10,6 +10,7 @@ use App\Models\Recipe;
 use App\Models\RecipeReference;
 use App\Models\RecipeTag;
 use App\Recipes\Display\IngredientFormatter;
+use App\Recipes\Indexing\RecipeReindexer;
 use App\Recipes\Indexing\SeeAlsoComputer;
 use App\Recipes\LLM\IngredientLLMParser;
 use App\Recipes\Parser\RecipeParser;
@@ -43,9 +44,11 @@ final class ReindexRecipes extends Command
         {--path=recipes : Root directory to walk}
         {--print-progress : Print a line per file as it indexes}
         {--with-llm : After rules-based parsing, run the LLM fallback over remaining unparsed ingredient lines}
-        {--dry-run : When combined with --with-llm, the LLM pass is a preview only (no API calls, no cache writes, no ingredient row mutations). The rest of the reindex runs normally.}';
+        {--dry-run : When combined with --with-llm, the LLM pass is a preview only (no API calls, no cache writes, no ingredient row mutations). The rest of the reindex runs normally.}
+        {--slug= : Phase 11B — reindex only the named recipe instead of the full corpus. Combines with --with-llm and --remove.}
+        {--remove : Phase 11B — when combined with --slug, deletes the recipe from the index (the .md file on disk is NOT touched).}';
 
-    protected $description = 'Truncate the recipe cache and reindex every recipes/**/*.md file.';
+    protected $description = 'Reindex recipes — full corpus by default, or a single slug with --slug.';
 
     public function __construct(
         private readonly RecipeParser $parser = new RecipeParser,
@@ -53,6 +56,7 @@ final class ReindexRecipes extends Command
         private readonly IngredientFormatter $ingredientFormatter = new IngredientFormatter,
         private readonly SeeAlsoComputer $seeAlsoComputer = new SeeAlsoComputer,
         private readonly IngredientLLMParser $llmParser = new IngredientLLMParser,
+        private readonly RecipeReindexer $reindexer = new RecipeReindexer,
     ) {
         parent::__construct();
     }
@@ -61,10 +65,17 @@ final class ReindexRecipes extends Command
     {
         $root = base_path((string) $this->option('path'));
         $verbose = (bool) $this->option('print-progress');
+        $slug = (string) ($this->option('slug') ?? '');
 
         if (! is_dir($root)) {
             $this->error("Recipe root not found: {$root}");
             return self::FAILURE;
+        }
+
+        // Phase 11B: single-slug paths short-circuit before the full-rebuild
+        // logic. They share the truncate-free incremental RecipeReindexer.
+        if ($slug !== '') {
+            return $this->handleSingleSlug($slug, $root);
         }
 
         $startedAt = microtime(true);
@@ -196,6 +207,82 @@ final class ReindexRecipes extends Command
         }
         if ($totals['skipped'] > 0) {
             $this->warn("Skipped {$totals['skipped']} files with parse errors.");
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Phase 11B — single-slug reindex (incremental). Delegates to
+     * RecipeReindexer. Returns command exit code.
+     */
+    private function handleSingleSlug(string $slug, string $root): int
+    {
+        $remove = (bool) $this->option('remove');
+
+        if ($remove) {
+            $result = $this->reindexer->remove($slug);
+        } else {
+            $result = $this->reindexer->reindexOne($slug, $root);
+        }
+
+        if ($result->status === 'not_found') {
+            if ($remove) {
+                $this->line("Recipe '{$slug}' not in the index — nothing to remove.");
+            } else {
+                $this->error("Recipe '{$slug}' not found under {$root}/. Aborting.");
+                return self::FAILURE;
+            }
+            return self::SUCCESS;
+        }
+
+        $statusLabel = $result->status;
+        if ($remove) {
+            $broken = $result->changes['crossrefs_broken'] ?? 0;
+            $this->line(sprintf(
+                'Removed %s: deleted (%d incoming refs now unresolved) in %dms',
+                $slug, $broken, $result->elapsedMs,
+            ));
+        } else {
+            $c = $result->changes;
+            $this->line(sprintf(
+                'Reindexed %s: %s (%d ingredients, %d method steps, %d see-also updated, %d crossrefs resolved, %d crossrefs broken) in %dms',
+                $slug,
+                $statusLabel,
+                $c['ingredients'] ?? 0,
+                $c['method_steps'] ?? 0,
+                $c['see_also_updated'] ?? 0,
+                $c['crossrefs_resolved'] ?? 0,
+                $c['crossrefs_broken'] ?? 0,
+                $result->elapsedMs,
+            ));
+        }
+
+        // Phase 9: optional LLM pass, scoped to this recipe's unparsed lines.
+        if ((bool) $this->option('with-llm') && ! $remove) {
+            $recipe = Recipe::query()->where('slug', $slug)->first();
+            if ($recipe !== null) {
+                $unparsed = Ingredient::query()
+                    ->where('recipe_id', $recipe->id)
+                    ->where('parsed', false)
+                    ->get();
+                $rawLines = $unparsed->pluck('raw')->unique()->values()->all();
+                if ($rawLines !== []) {
+                    if ((bool) $this->option('dry-run')) {
+                        $preview = $this->llmParser->previewBatch($rawLines, sampleSize: 5);
+                        $this->line(sprintf(
+                            'LLM fallback dry-run: would submit %d unparsed lines.',
+                            $preview['total'],
+                        ));
+                    } else {
+                        $stats = $this->llmParser->applyToUnparsedRows($unparsed);
+                        $this->line(sprintf(
+                            'LLM fallback: %d lines submitted, %d parsed, %d cached misses, %d still unparsed.',
+                            $stats['submitted'], $stats['parsed'], $stats['cached_misses'], $stats['still_unparsed'],
+                        ));
+                    }
+                }
+            }
         }
 
         return self::SUCCESS;

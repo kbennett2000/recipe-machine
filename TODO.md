@@ -61,6 +61,16 @@ ships or in a Phase 11 polish pass.
       automatically; the redundant note is harmless but
       cosmetically noisy. Small prompt revision after collecting
       more real-world examples.
+- [ ] Clean up redundant LLM cache entries that the rules-based
+      parser can now handle. Specifically: the "Up to 1/4 cup toasted
+      sesame seed oil" entry (from scallion-pancakes) is now
+      rules-parseable thanks to Phase 11A.1. The cached hit is
+      harmless but a small maintenance item — could be cleared via
+      `recipes:llm-cache-clear --line='...'` if we want to keep the
+      cache tidy.
+- [ ] Future parser shape: "up to N to M unit X" (ranged upper-bound).
+      Semantically muddy and absent from current corpus + LLM cache.
+      Not blocking. Revisit if a real recipe surfaces this pattern.
 
 ## Resolved in v1.0 (Phase 10)
 
