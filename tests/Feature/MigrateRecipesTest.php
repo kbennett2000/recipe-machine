@@ -182,6 +182,94 @@ final class MigrateRecipesTest extends TestCase
         $this->assertSame('Honey Oat Bread', $outcome['results'][0]->sourceTitle);
     }
 
+    public function test_sourdough_starter_split_extracts_nested_subsubsection(): void
+    {
+        // Mimics the predicted structure of the real bread codex:
+        //   ## Royal Groktanstelvanian Sourdough Boule
+        //   (parent ingredients / method / libation)
+        //   ### Bonus: The Sacred Sourdough Starter      <-- level 3, first "starter" header
+        //     (intro prose about the starter)
+        //     #### How to Create Thy Royal Starter        <-- level 4, sub-sub-section
+        //       (ingredients + method for growing the starter)
+        $source = <<<'MD'
+            # The Official Royal Codex of Kick-Ass Breads
+
+            ## Royal Groktanstelvanian Sourdough Boule
+
+            - 4 cups bread flour
+            - 1 1/2 tsp salt
+            - 1 cup active sourdough starter
+            - 1 1/2 cups warm water
+
+            **Method**: Mix all ingredients in a large bowl. Knead briefly until shaggy. Bulk ferment overnight at room temperature. Shape and proof 4 hours. Bake in a Dutch oven at 500F for 45 minutes total.
+
+            **Libation**: Dry farmhouse ale.
+
+            ### Bonus: The Sacred Sourdough Starter
+
+            A living culture, fed and tended over weeks. The boule above needs an active starter — here's how to grow one from scratch.
+
+            #### How to Create Thy Royal Starter
+
+            - 1/2 cup whole wheat flour
+            - 1/2 cup filtered water
+
+            **Method**: Combine flour and water in a clean glass jar. Cover loosely with a cloth. Feed daily for 7 days by doubling the starter with equal parts flour and water and discarding half.
+
+            **Libation**: Iced coffee, because you'll be doing dishes.
+            MD;
+        $sourcePath = $this->tmpDir.'/sourdough-codex.md';
+        file_put_contents($sourcePath, $source);
+
+        $migrator = new Migrator;
+
+        // First pass: --dry-run reports two recipes.
+        $dryOutcome = $migrator->migrate($sourcePath, 'breads', dryRun: true, outputRoot: $this->outputRoot);
+        $this->assertCount(2, $dryOutcome['results'],
+            '--dry-run should report TWO recipes (parent + extracted starter), not one.');
+
+        // Second pass: actually write files so we can inspect rendered bodies.
+        $outcome = $migrator->migrate($sourcePath, 'breads', dryRun: false, outputRoot: $this->outputRoot);
+        $this->assertCount(2, $outcome['results']);
+
+        $parent = $outcome['results'][0];
+        $starter = $outcome['results'][1];
+
+        $this->assertSame('royal-groktanstelvanian-sourdough-boule', $parent->slug,
+            'Parent slug must match the title slugified — numeric prefix stripping, no leading "1-" etc.');
+        $this->assertSame('sourdough-starter', $starter->slug,
+            'Starter slug must be "sourdough-starter" (the synthetic title the Migrator gives the split recipe).');
+
+        $parentFile = (string) file_get_contents($parent->targetPath);
+        $starterFile = (string) file_get_contents($starter->targetPath);
+
+        // Starter file must include the contents of the deeply-nested
+        // #### How to Create sub-sub-section: at minimum the ingredient
+        // bullets and the method-prose seed phrase.
+        $this->assertStringContainsString('whole wheat flour', $starterFile,
+            'Starter body should include the bullets from the #### How to Create section.');
+        $this->assertStringContainsString('filtered water', $starterFile);
+        $this->assertStringContainsString('Combine flour and water', $starterFile,
+            'Starter body should include the method-prose from the #### How to Create section.');
+
+        // Parent frontmatter must include references: [sourdough-starter].
+        // We check via the round-trip cross_references list rather than parsing
+        // YAML by hand — that's exactly what the spec/parser contract guarantees.
+        $this->assertContains('sourdough-starter', $parent->crossReferences,
+            'Parent should have references: [sourdough-starter] in frontmatter.');
+
+        // Parent body must NOT contain any starter content. If splitOutSourdoughStarter
+        // undershoots, the bonus block leaks into the parent's Ingredients/Method/Notes.
+        $this->assertStringNotContainsString('whole wheat flour', $parentFile,
+            'Parent body must not contain starter ingredients — the split undershot.');
+        $this->assertStringNotContainsString('How to Create Thy Royal Starter', $parentFile,
+            'Parent body must not contain the starter sub-sub-header — the split undershot.');
+        $this->assertStringNotContainsString('Sacred Sourdough Starter', $parentFile,
+            'Parent body must not contain the bonus-section header — the split undershot.');
+        $this->assertStringNotContainsString('Feed daily for 7 days', $parentFile,
+            'Parent body must not contain the starter method prose — the split undershot.');
+    }
+
     public function test_slug_strips_special_characters(): void
     {
         $parser = new SourceParser;

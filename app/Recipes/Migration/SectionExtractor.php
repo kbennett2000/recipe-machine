@@ -159,9 +159,17 @@ final class SectionExtractor
     }
 
     /**
-     * Default-case extraction: take consecutive bullet lines starting at
-     * the top of the body. Walks past any leading blank/horizontal-rule
-     * lines and stops at the first non-bullet content.
+     * Default-case extraction: take the first contiguous bullet list found
+     * anywhere in the body. Skips leading non-bullet content (intro prose,
+     * unrecognized headers like `#### How to Create ...`) and then takes
+     * consecutive bullets, stopping at the first non-bullet after them.
+     *
+     * Phase 2B.1 hardening: previously this gave up at the first non-bullet
+     * line, which meant recipes-within-recipes (the sourdough starter case)
+     * lost their ingredient bullets because the source had an unrecognized
+     * `#### Sub-Header` between the body's start and the ingredient list.
+     * Now we walk past leading non-bullets until bullets appear, then take
+     * the contiguous run.
      *
      * @param  array<string>  $lines
      * @return array<string>
@@ -189,8 +197,13 @@ final class SectionExtractor
                 $bullets[count($bullets) - 1] .= ' '.$trimmed;
                 continue;
             }
-            // First non-bullet content ends the implicit ingredient block.
-            break;
+            // Non-bullet content: skip while we haven't found any bullets yet,
+            // but stop once we have (the run ends at the first non-bullet line).
+            if ($seenBullet) {
+                break;
+            }
+            // Leading prose / unrecognized sub-header — keep scanning forward.
+            continue;
         }
         return $bullets;
     }
