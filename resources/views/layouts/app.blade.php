@@ -65,9 +65,13 @@
                             </span>
                         @endif
                     @endforeach
-                    <span class="text-stone-400 dark:text-stone-600 cursor-default border-l border-stone-200 dark:border-stone-700 pl-4">
-                        Shopping List <span class="text-xs">soon</span>
-                    </span>
+                    <a href="{{ route('shopping-list') }}"
+                       class="border-l border-stone-200 dark:border-stone-700 pl-4 text-stone-700 hover:text-amber-700 dark:text-stone-300 dark:hover:text-amber-400 transition">
+                        Shopping List
+                        <span x-show="$store.shoppingList.count > 0" x-cloak
+                              x-text="$store.shoppingList.count"
+                              class="ml-0.5 inline-block min-w-[1.25rem] rounded-full bg-amber-100 px-1.5 text-xs font-medium text-amber-800 text-center dark:bg-amber-900/40 dark:text-amber-300"></span>
+                    </a>
                 </nav>
             </div>
         </header>

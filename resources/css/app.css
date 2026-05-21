@@ -33,3 +33,15 @@
 .xref-unresolved {
     @apply font-semibold text-stone-700 dark:text-stone-300;
 }
+
+/* Print styles for the shopping list — hide chrome, keep just the aggregated list. */
+@media print {
+    header, footer, nav, .no-print { display: none !important; }
+    .only-print { display: block !important; }
+    body { background: white !important; color: black !important; }
+    main { max-width: none !important; padding: 0 !important; }
+    a { color: black !important; text-decoration: none !important; }
+}
+@media screen {
+    .only-print { display: none; }
+}

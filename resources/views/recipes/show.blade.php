@@ -87,27 +87,64 @@
         @endif
     </header>
 
-    {{-- SERVINGS STEPPER --}}
-    @if ($recipe->yields !== null && $recipe->yields > 0)
-        <div x-data="recipeScale('{{ $recipe->slug }}', {{ $recipe->yields }})" class="mb-8 flex items-center gap-3 flex-wrap" data-testid="servings-stepper">
-            <label for="servings-input" class="font-medium text-sm text-stone-700 dark:text-stone-300">
-                Servings:
-            </label>
-            <div class="inline-flex items-center gap-1">
-                <button type="button" @click="decrement"
-                        class="rounded border border-stone-300 px-2.5 py-1 text-stone-700 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
-                        aria-label="Decrease servings">−</button>
-                <input id="servings-input" type="number" x-model.number="servings"
-                       :min="1" :max="defaultServings * 2"
-                       class="w-16 rounded border border-stone-300 px-2 py-1 text-center text-stone-900 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
-                <button type="button" @click="increment"
-                        class="rounded border border-stone-300 px-2.5 py-1 text-stone-700 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
-                        aria-label="Increase servings">+</button>
+    {{-- STEPPER + SHOPPING LIST BUTTON ROW --}}
+    <div class="mb-8 flex items-center gap-5 flex-wrap" x-data="{ slug: '{{ $recipe->slug }}' }">
+        @if ($recipe->yields !== null && $recipe->yields > 0)
+            <div x-data="recipeScale('{{ $recipe->slug }}', {{ $recipe->yields }})" class="flex items-center gap-3 flex-wrap" data-testid="servings-stepper">
+                <label for="servings-input" class="font-medium text-sm text-stone-700 dark:text-stone-300">
+                    Servings:
+                </label>
+                <div class="inline-flex items-center gap-1">
+                    <button type="button" @click="decrement"
+                            class="rounded border border-stone-300 px-2.5 py-1 text-stone-700 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+                            aria-label="Decrease servings">−</button>
+                    <input id="servings-input" type="number" x-model.number="servings"
+                           :min="1" :max="defaultServings * 2"
+                           class="w-16 rounded border border-stone-300 px-2 py-1 text-center text-stone-900 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
+                    <button type="button" @click="increment"
+                            class="rounded border border-stone-300 px-2.5 py-1 text-stone-700 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+                            aria-label="Increase servings">+</button>
+                </div>
+                <span x-show="servings !== defaultServings" x-cloak x-text="scaledLabel"
+                      class="text-sm font-medium text-amber-700 dark:text-amber-400"></span>
+                {{-- Shopping list button — when the recipe has yields, the button knows the current scale. --}}
+                <template x-if="!$store.shoppingList.has(slug)">
+                    <button type="button"
+                            @click="$store.shoppingList.add(slug, scale)"
+                            class="ml-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50">
+                        <span aria-hidden="true">+</span> Add to shopping list
+                    </button>
+                </template>
+                <template x-if="$store.shoppingList.has(slug)">
+                    <span class="ml-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-400 bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-200">
+                        <span aria-hidden="true">✓</span>
+                        In shopping list
+                        <button type="button" @click="$store.shoppingList.remove(slug)"
+                                class="ml-1 text-amber-900/70 hover:text-rose-700 dark:text-amber-200/70 dark:hover:text-rose-400"
+                                aria-label="Remove from shopping list">×</button>
+                    </span>
+                </template>
             </div>
-            <span x-show="servings !== defaultServings" x-cloak x-text="scaledLabel"
-                  class="text-sm font-medium text-amber-700 dark:text-amber-400"></span>
-        </div>
-    @endif
+        @else
+            {{-- Recipes without yields: standalone Add button. --}}
+            <template x-if="!$store.shoppingList.has(slug)">
+                <button type="button"
+                        @click="$store.shoppingList.add(slug, 1)"
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50">
+                    <span aria-hidden="true">+</span> Add to shopping list
+                </button>
+            </template>
+            <template x-if="$store.shoppingList.has(slug)">
+                <span class="inline-flex items-center gap-1.5 rounded-lg border border-amber-400 bg-amber-100 px-3 py-1.5 text-sm font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-200">
+                    <span aria-hidden="true">✓</span>
+                    In shopping list
+                    <button type="button" @click="$store.shoppingList.remove(slug)"
+                            class="ml-1 text-amber-900/70 hover:text-rose-700 dark:text-amber-200/70 dark:hover:text-rose-400"
+                            aria-label="Remove from shopping list">×</button>
+                </span>
+            </template>
+        @endif
+    </div>
 
     {{-- INGREDIENTS + METHOD GRID --}}
     <div class="grid grid-cols-1 gap-10 lg:grid-cols-[280px_1fr]">

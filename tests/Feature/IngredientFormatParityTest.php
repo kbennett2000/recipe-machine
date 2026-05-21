@@ -64,6 +64,12 @@ final class IngredientFormatParityTest extends TestCase
         if ($script === false) {
             throw new RuntimeException('Cannot find run-formatter.mjs');
         }
+        // Probe for node before opening a process — proc_open emits a noisy
+        // PHP warning when the binary isn't found, which we'd rather not see.
+        $probe = trim((string) @shell_exec('command -v node 2>/dev/null'));
+        if ($probe === '') {
+            $this->markTestSkipped('Node not available on PATH — parity test skipped.');
+        }
         $payload = json_encode($cases);
 
         $descriptors = [
@@ -71,9 +77,9 @@ final class IngredientFormatParityTest extends TestCase
             1 => ['pipe', 'w'],
             2 => ['pipe', 'w'],
         ];
-        $proc = proc_open(['node', $script], $descriptors, $pipes);
+        $proc = @proc_open([$probe, $script], $descriptors, $pipes);
         if (! is_resource($proc)) {
-            $this->markTestSkipped('Node not available — parity test skipped.');
+            $this->markTestSkipped('Could not spawn Node — parity test skipped.');
         }
         fwrite($pipes[0], $payload);
         fclose($pipes[0]);
