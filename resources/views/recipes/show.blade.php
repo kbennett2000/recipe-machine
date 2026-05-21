@@ -87,6 +87,28 @@
         @endif
     </header>
 
+    {{-- SERVINGS STEPPER --}}
+    @if ($recipe->yields !== null && $recipe->yields > 0)
+        <div x-data="recipeScale('{{ $recipe->slug }}', {{ $recipe->yields }})" class="mb-8 flex items-center gap-3 flex-wrap" data-testid="servings-stepper">
+            <label for="servings-input" class="font-medium text-sm text-stone-700 dark:text-stone-300">
+                Servings:
+            </label>
+            <div class="inline-flex items-center gap-1">
+                <button type="button" @click="decrement"
+                        class="rounded border border-stone-300 px-2.5 py-1 text-stone-700 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+                        aria-label="Decrease servings">−</button>
+                <input id="servings-input" type="number" x-model.number="servings"
+                       :min="1" :max="defaultServings * 2"
+                       class="w-16 rounded border border-stone-300 px-2 py-1 text-center text-stone-900 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
+                <button type="button" @click="increment"
+                        class="rounded border border-stone-300 px-2.5 py-1 text-stone-700 hover:bg-stone-100 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-800"
+                        aria-label="Increase servings">+</button>
+            </div>
+            <span x-show="servings !== defaultServings" x-cloak x-text="scaledLabel"
+                  class="text-sm font-medium text-amber-700 dark:text-amber-400"></span>
+        </div>
+    @endif
+
     {{-- INGREDIENTS + METHOD GRID --}}
     <div class="grid grid-cols-1 gap-10 lg:grid-cols-[280px_1fr]">
 
@@ -129,7 +151,15 @@
                         @foreach ($items as $ing)
                             <li class="leading-snug">
                                 @if ($ing->parsed)
-                                    <span>{{ $ingredientFormatter->format($ing) }}</span>
+                                    <span
+                                        @if ($ing->amount !== null)data-amount="{{ $ing->amount }}"@endif
+                                        @if ($ing->amount_high !== null)data-amount-high="{{ $ing->amount_high }}"@endif
+                                        @if ($ing->unit !== null)data-unit="{{ $ing->unit }}"@endif
+                                        @if ($ing->unit_class !== null)data-unit-class="{{ $ing->unit_class }}"@endif
+                                        @if ($ing->ingredient !== null)data-ingredient="{{ $ing->ingredient }}"@endif
+                                        @if ($ing->modifier !== null)data-modifier="{{ $ing->modifier }}"@endif
+                                        @if ($ing->optional)data-optional="1"@endif
+                                    >{{ $ingredientFormatter->format($ing) }}</span>
                                     @if ($ing->note)
                                         <span class="text-sm text-stone-500 dark:text-stone-500"> — {{ $ing->note }}</span>
                                     @endif

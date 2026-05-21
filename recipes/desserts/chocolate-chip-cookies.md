@@ -2,6 +2,8 @@
 title: Chocolate Chip Cookies
 category: desserts
 slug: chocolate-chip-cookies
+servings: "makes ~36 cookies"
+yields: 36
 cook_time: "10m"
 tags: []
 ---

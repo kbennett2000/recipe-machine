@@ -2,6 +2,8 @@
 title: Honey Oat Bread
 category: breads
 slug: honey-oat-bread
+servings: "1 loaf (~12 slices)"
+yields: 12
 cook_time: "40m"
 oven_temp: "350F"
 tags: []

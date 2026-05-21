@@ -638,6 +638,62 @@ This example exercises:
 
 ---
 
+## f.1) Scaling math (Phase 5)
+
+Recipes with a numeric `yields` frontmatter field can be scaled live in the
+UI: the reader changes the target servings and ingredient amounts
+recalculate. The math rules below define how the formatter handles the
+results — both server-side (PHP `IngredientFormatter`) and client-side
+(`resources/js/ingredient-format.js`). The two implementations must agree
+byte-for-byte; a parity test (`composer parity-check`) enforces it.
+
+**Per unit class:**
+
+| Unit class       | How scaled amounts render                                              |
+|------------------|------------------------------------------------------------------------|
+| `whole`          | Round to nearest 0.5; show `~` prefix if non-integer (`~4.5 eggs`)     |
+| Volume / weight  | Snap to common fractions when possible (`1/2`, `1 1/4`); decimal fallback otherwise |
+| `null` (no unit) | Same as volume/weight — display the scaled number, no unit            |
+| `imprecise`      | **Do not scale**. "A pinch of salt" stays "A pinch of salt" at any factor. |
+
+**The `~` rule for countable items.** When `unit=whole` and the scaled
+amount isn't an integer, the formatter prefixes the rendered amount with
+`~` to be honest about the math:
+
+| Input                              | Scale | Rendered            |
+|------------------------------------|-------|---------------------|
+| 3 eggs                             | ×1.5  | `~4.5 eggs`         |
+| 1 onion                            | ×2.5  | `~2.5 onions`       |
+| 3 eggs                             | ×2    | `6 eggs`            |
+| 2 cups flour                       | ×1.5  | `3 cups flour`      |
+| 1.5 cups flour                     | ×2    | `3 cups flour`      |
+
+The amount itself is rounded to the nearest 0.5 increment, so the result
+is always a clean fraction (5, 5.5, 6, …) — the reader makes the final
+"do I add half an egg?" call. There is no auto-rounding to whole units;
+that would silently change the proportions of the rest of the recipe.
+
+**Ranges scale both endpoints.** `2-3 cloves garlic` ×2 → `4–6 garlic cloves`.
+If either endpoint becomes non-integer under a whole-unit scale, the `~`
+prefix applies to the range (`~3–4.5 garlic cloves`).
+
+**Method steps do NOT scale.** "Bake for 35 minutes" stays "Bake for 35
+minutes" at any scale factor. Bake times, rise times, and cooking
+durations are nonlinear in batch size — scaling a 35-minute bake to
+52 minutes for a 1.5× batch would be wrong more often than it'd be right.
+Timing decisions stay with the cook.
+
+**Recipes without `yields` have no scaling UI.** They render as a static
+display. `yields` is the explicit opt-in.
+
+**Scale persistence.** The user's chosen scale persists per recipe via
+browser `sessionStorage` (not `localStorage` — we deliberately scope the
+preference to the current browser session). Closing the browser resets all
+scales; navigating between recipes during a session keeps each recipe's
+scale independently.
+
+---
+
 ## g) Open questions / explicit non-decisions
 
 These were considered and deliberately left unspecified in v1. Each is callable out as future work when the use case arrives.

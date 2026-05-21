@@ -2,6 +2,8 @@
 title: Potato Soup
 category: soups
 slug: potato-soup
+servings: "8 servings"
+yields: 8
 cook_time: "30m"
 tags: []
 ---

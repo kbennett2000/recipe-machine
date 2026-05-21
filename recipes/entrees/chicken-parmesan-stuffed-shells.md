@@ -2,6 +2,8 @@
 title: Chicken Parmesan Stuffed Shells
 category: entrees
 slug: chicken-parmesan-stuffed-shells
+servings: "8 servings (32 shells, 4 per plate)"
+yields: 8
 cook_time: "10m"
 oven_temp: "350F"
 tags: []

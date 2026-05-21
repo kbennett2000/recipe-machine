@@ -9,11 +9,6 @@ use App\Models\Ingredient;
 /**
  * Converts a structured Ingredient row into a natural-prose display string.
  *
- * The renderer reads the parsed structured fields (amount, unit, ingredient,
- * modifier) — NOT the raw line — so the displayed text reflects the parser's
- * understanding of the line. This is intentional per the Phase 3 brief: it
- * proves the parser works end-to-end.
- *
  * Special cases:
  *   - Unparsed lines fall back to the raw text (caller renders italicized).
  *   - Imprecise leading units (pinch/dash/etc.) render as "a pinch of <X>".
@@ -22,6 +17,15 @@ use App\Models\Ingredient;
  *   - Amounts that match common fractions display as fractions (1/2, not 0.5).
  *   - Volume/weight units pluralize for amounts > 1 where it reads naturally
  *     (cup → cups; tsp, g, ml don't pluralize).
+ *
+ * Phase 5: scaling can produce fractional counts of countable items
+ * ("3 eggs × 1.5 = 4.5 eggs"). The spec's "Scaling math" subsection
+ * dictates: `unit=whole` with a fractional amount renders with a leading
+ * `~` prefix and rounds to the nearest 0.5 increment, so the user is
+ * reminded that the math doesn't perfectly fit.
+ *
+ * The JS twin at `resources/js/ingredient-format.js` MUST stay in sync —
+ * the parity test asserts byte-identical output for both.
  */
 final class IngredientFormatter
 {
@@ -51,67 +55,116 @@ final class IngredientFormatter
         'as-needed' => 'as needed',
     ];
 
+    /**
+     * Common fractions for amount-snapping. List of [target, label] because
+     * PHP truncates numeric float keys to ints.
+     */
+    private const FRACTIONS = [
+        [0.125, '1/8'],
+        [0.25,  '1/4'],
+        [0.333, '1/3'],
+        [0.375, '3/8'],
+        [0.5,   '1/2'],
+        [0.625, '5/8'],
+        [0.667, '2/3'],
+        [0.75,  '3/4'],
+        [0.875, '7/8'],
+    ];
+
     public function format(Ingredient $i): string
     {
         if (! $i->parsed) {
             return $i->raw;
         }
 
-        $optional = $i->optional ? ' (optional)' : '';
+        return $this->formatFields([
+            'amount'      => $i->amount,
+            'amount_high' => $i->amount_high,
+            'unit'        => $i->unit,
+            'unit_class'  => $i->unit_class,
+            'ingredient'  => $i->ingredient,
+            'modifier'    => $i->modifier,
+            'optional'    => (bool) $i->optional,
+        ]);
+    }
+
+    /**
+     * Format directly from an associative array of fields. The parity test
+     * uses this to bypass the Ingredient model and feed identical inputs to
+     * the PHP and JS formatters.
+     *
+     * @param  array{amount: float|null, amount_high?: float|null, unit?: string|null, unit_class?: string|null, ingredient?: string|null, modifier?: string|null, optional?: bool}  $fields
+     */
+    public function formatFields(array $fields): string
+    {
+        $amount = $fields['amount'] ?? null;
+        $amountHigh = $fields['amount_high'] ?? null;
+        $unit = $fields['unit'] ?? null;
+        $unitClass = $fields['unit_class'] ?? null;
+        $ingredient = $fields['ingredient'] ?? null;
+        $modifier = $fields['modifier'] ?? null;
+        $optional = ! empty($fields['optional']);
+
+        $optionalTag = $optional ? ' (optional)' : '';
 
         // Imprecise trailing: "salt to taste" / "olive oil, as needed".
-        if (isset(self::IMPRECISE_TRAILING_PHRASE[$i->unit])) {
-            $phrase = self::IMPRECISE_TRAILING_PHRASE[$i->unit];
-            $ingredient = $i->ingredient ?? '';
-            $sep = $i->unit === 'as-needed' ? ', ' : ' ';
-            return trim("{$ingredient}{$sep}{$phrase}").$optional;
+        if ($unit !== null && isset(self::IMPRECISE_TRAILING_PHRASE[$unit])) {
+            $phrase = self::IMPRECISE_TRAILING_PHRASE[$unit];
+            $sep = $unit === 'as-needed' ? ', ' : ' ';
+            return trim(((string) $ingredient).$sep.$phrase).$optionalTag;
         }
 
         // Imprecise leading: "a pinch of salt".
-        if ($i->unit_class === 'imprecise') {
-            return "a {$i->unit} of {$i->ingredient}".$optional;
+        if ($unitClass === 'imprecise') {
+            return 'a '.$unit.' of '.$ingredient.$optionalTag;
         }
 
         // Generic: <amount> <unit> <ingredient>[, <modifier>]
         $parts = [];
 
-        if ($i->amount !== null) {
-            $parts[] = $this->formatAmount($i->amount, $i->amount_high);
+        if ($amount !== null) {
+            $parts[] = $this->formatAmount((float) $amount, $amountHigh, $unit);
         }
 
-        if ($i->unit !== null && $i->unit !== 'whole') {
-            $isPlural = $this->amountIsPlural($i->amount, $i->amount_high);
-            [$singular, $plural] = self::UNIT_DISPLAY[$i->unit] ?? [$i->unit, $i->unit];
+        if ($unit !== null && $unit !== 'whole') {
+            $isPlural = $this->amountIsPlural($amount, $amountHigh);
+            [$singular, $plural] = self::UNIT_DISPLAY[$unit] ?? [$unit, $unit];
             $parts[] = $isPlural ? $plural : $singular;
         }
 
-        if ($i->ingredient !== null) {
-            $parts[] = $i->ingredient;
+        if ($ingredient !== null && $ingredient !== '') {
+            $parts[] = $ingredient;
         }
 
         $line = trim(implode(' ', $parts));
-        if ($i->modifier !== null && $i->modifier !== '') {
-            $line .= ', '.$i->modifier;
+        if ($modifier !== null && $modifier !== '') {
+            $line .= ', '.$modifier;
         }
 
-        return $line.$optional;
+        return $line.$optionalTag;
     }
 
     /**
      * Display amount as fraction where natural.
-     *  - 0.5      → "1/2"
-     *  - 1.5      → "1 1/2"
-     *  - 0.25     → "1/4"
-     *  - 0.333... → "1/3"
-     *  - 2        → "2"
-     *  - "1-2"    → "1-2"   (range)
+     *
+     * Per the spec's "Scaling math" subsection, whole-unit amounts with a
+     * non-integer value render with a `~` prefix and round to nearest 0.5.
      */
-    public function formatAmount(float $amount, ?float $amountHigh = null): string
+    public function formatAmount(float $amount, ?float $amountHigh = null, ?string $unit = null): string
     {
+        if ($unit === 'whole' && $this->isNonIntegerCount($amount, $amountHigh)) {
+            $lo = $this->roundToHalf($amount);
+            if ($amountHigh !== null) {
+                $hi = $this->roundToHalf($amountHigh);
+                return '~'.$this->formatHalfStep($lo).'–'.$this->formatHalfStep($hi);
+            }
+            return '~'.$this->formatHalfStep($lo);
+        }
+
         $lo = $this->formatSingleAmount($amount);
         if ($amountHigh !== null) {
             $hi = $this->formatSingleAmount($amountHigh);
-            return "{$lo}–{$hi}";
+            return $lo.'–'.$hi;
         }
         return $lo;
     }
@@ -125,27 +178,41 @@ final class IngredientFormatter
         $whole = (int) floor($n);
         $frac = $n - $whole;
 
-        // Common fractions: try to snap to a clean string.
-        // PHP truncates numeric (float) array keys to ints, so we use a list of
-        // [target, label] pairs instead of a [target => label] map.
-        $fractions = [
-            [0.125, '1/8'],
-            [0.25,  '1/4'],
-            [0.333, '1/3'],
-            [0.375, '3/8'],
-            [0.5,   '1/2'],
-            [0.625, '5/8'],
-            [0.667, '2/3'],
-            [0.75,  '3/4'],
-            [0.875, '7/8'],
-        ];
-        foreach ($fractions as [$target, $label]) {
+        foreach (self::FRACTIONS as [$target, $label]) {
             if (abs($frac - $target) < 0.01) {
-                return $whole > 0 ? "{$whole} {$label}" : $label;
+                return $whole > 0 ? $whole.' '.$label : $label;
             }
         }
         // Fall back to decimal.
         return rtrim(rtrim(number_format($n, 2, '.', ''), '0'), '.');
+    }
+
+    /**
+     * Render a value that is already rounded to a 0.5 increment.
+     * Integers render as "5"; halves render as "4.5".
+     */
+    private function formatHalfStep(float $n): string
+    {
+        if ($n === floor($n)) {
+            return (string) (int) $n;
+        }
+        return number_format($n, 1, '.', '');
+    }
+
+    private function isNonIntegerCount(float $a, ?float $b): bool
+    {
+        if ($a !== floor($a)) {
+            return true;
+        }
+        if ($b !== null && $b !== floor($b)) {
+            return true;
+        }
+        return false;
+    }
+
+    private function roundToHalf(float $n): float
+    {
+        return round($n * 2) / 2;
     }
 
     private function amountIsPlural(?float $amount, ?float $amountHigh): bool
