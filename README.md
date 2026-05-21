@@ -8,6 +8,8 @@ Recipe Machine is a self-hosted PHP web application that turns a directory of pl
 
 **Status:** under active development. Phase 0 complete.
 
+Known issues and deferred work are tracked in [TODO.md](TODO.md).
+
 ## Quick start
 
 Two ways to run it locally — pick one.
