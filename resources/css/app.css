@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Phase 10: self-hosted fonts. Files in public/fonts/. Variable
+   axes — single file per face covers all weights. Inter is WOFF2;
+   Fraunces ships only TTF from the upstream repo (still small enough
+   for our use case). Both are SIL OFL — see docs/credits.md. */
+@font-face {
+    font-family: 'Inter Variable';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('/fonts/Inter-Variable.woff2') format('woff2-variations');
+}
+@font-face {
+    font-family: 'Inter Variable';
+    font-style: italic;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('/fonts/Inter-Variable-Italic.woff2') format('woff2-variations');
+}
+@font-face {
+    font-family: 'Fraunces Variable';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('/fonts/Fraunces-Variable.ttf') format('truetype-variations');
+}
+@font-face {
+    font-family: 'Fraunces Variable';
+    font-style: italic;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('/fonts/Fraunces-Italic-Variable.ttf') format('truetype-variations');
+}
+
 [x-cloak] { display: none !important; }
 
 /* Method-step metric badges — temperature and timer phrases get visually distinct. */

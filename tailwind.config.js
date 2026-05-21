@@ -13,9 +13,11 @@ export default {
     theme: {
         extend: {
             fontFamily: {
-                sans: ['Inter', ...defaultTheme.fontFamily.sans],
-                display: ['Fraunces', 'Georgia', 'serif'],
-                serif: ['Fraunces', 'Georgia', 'serif'],
+                // Phase 10: self-hosted Inter + Fraunces. "Variable" suffix
+                // matches the @font-face family names in resources/css/app.css.
+                sans: ['Inter Variable', 'Inter', ...defaultTheme.fontFamily.sans],
+                display: ['Fraunces Variable', 'Fraunces', 'Georgia', 'serif'],
+                serif: ['Fraunces Variable', 'Fraunces', 'Georgia', 'serif'],
             },
         },
     },

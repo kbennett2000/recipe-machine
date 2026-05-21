@@ -4,14 +4,6 @@ Known issues and deferred work for recipe-machine. Items here are
 out of scope for the current phase but worth fixing before v1
 ships or in a Phase 11 polish pass.
 
-## Bugs
-
-- [ ] ShoppingListTest CSRF/419 failures (5 tests). Pre-existing on
-      main since Phase 6.x. Likely Laravel CSRF middleware needs
-      to be excluded for the /shopping-list/calculate JSON endpoint,
-      or the test needs to seed a CSRF token. Affects: tests only,
-      not user-facing behavior.
-
 ## Deferrals (Phase 11 polish targets)
 
 - [ ] Drop platform PHP 8.3 pin in composer.json (decided in Phase 0,
@@ -23,16 +15,6 @@ ships or in a Phase 11 polish pass.
 - [ ] Jump-to-step picker for cooking mode on 30+-step recipes
       (pie-crust has 45). Currently the user has to tap Next N times
       to resume mid-recipe.
-- [ ] Self-host Fraunces + Inter font files in public/fonts/ instead
-      of loading from Google Fonts CDN. Self-hosted ethos + privacy.
-- [ ] Named-volume migration issue: Docker named volume captures all
-      of database/ which hides newly-added migration files until
-      `docker compose down -v`. Scope the volume to just the
-      .sqlite file.
-- [ ] Vite manifest / Docker rebuild gotcha: rebuilding JS/CSS on
-      the host requires `docker compose build app` to update the
-      container image. Worth a Makefile target or compose override
-      to streamline.
 - [ ] Compound-imprecise parser pattern: "salt, or to taste"
       doesn't parse cleanly. Documented workaround is the em-dash
       form. Real fix is parser-side recognition of "or <imprecise>"
@@ -66,12 +48,6 @@ ships or in a Phase 11 polish pass.
       real problem the moment a recipe uses italics in a method
       step. Audit MethodFormatter, and either extend both formatters
       or document the supported subset in docs/recipe-format.md.
-- [ ] Install Node in the Dockerfile so the PHP↔JS parity test runs
-      in CI / container builds. Currently the parity test silently
-      skips if Node isn't installed in the running container, which
-      hides real formatter divergences. Folding `apt-get install
-      nodejs` (or a node base image stage) into Dockerfile.app would
-      make the parity test actually run on every container build.
 - [ ] Distinguish LLM miss types in the cache. Currently
       `ingredient_llm_cache.status='miss'` collapses two cases:
       (a) the LLM returned null (legitimate non-ingredient
@@ -85,6 +61,22 @@ ships or in a Phase 11 polish pass.
       automatically; the redundant note is harmless but
       cosmetically noisy. Small prompt revision after collecting
       more real-world examples.
+
+## Resolved in v1.0 (Phase 10)
+
+- ShoppingListTest CSRF/419 failures — `/shopping-list/calculate` is
+  now exempted from CSRF validation (stateless JSON endpoint, no
+  session mutation, no auth). All 329 tests pass.
+- Self-hosted Fraunces + Inter fonts under [public/fonts/](public/fonts/).
+- Named-volume migration shadowing — the docker-compose volume now
+  binds only `database/database.sqlite`, so new migrations under
+  `database/migrations/` are visible to the container immediately.
+- Vite/Docker rebuild streamline — `Makefile` wraps the common
+  workflows; the Dockerfile is now multi-stage and builds the Vite
+  bundle into the image, so `docker compose up --build` works from
+  a fresh clone with no host-side npm.
+- Node installed in the Dockerfile — the PHP↔JS parity test runs
+  for real, no silent skip.
 
 ## Content-side cleanups
 

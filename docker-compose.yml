@@ -11,11 +11,14 @@ services:
       DB_CONNECTION: sqlite
       DB_DATABASE: /var/www/html/database/database.sqlite
     volumes:
-      # Markdown recipe files live outside the app — mount them in.
+      # Markdown recipe files live outside the app — mount them in so
+      # edits show up without a container rebuild.
       - ./recipes:/var/www/html/recipes
-      # Persist the SQLite database across container rebuilds.
-      - sqlite-data:/var/www/html/database
+      # Persist the SQLite file (only) across container rebuilds. Scoping
+      # the bind to the .sqlite file — rather than the whole database/
+      # directory — means new migrations under database/migrations/ baked
+      # into the image are visible immediately, no `docker compose down -v`
+      # required. (Phase 10 fix for the named-volume migration shadowing
+      # issue noted in TODO.md.)
+      - ./database/database.sqlite:/var/www/html/database/database.sqlite
     restart: unless-stopped
-
-volumes:
-  sqlite-data:
