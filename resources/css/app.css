@@ -15,6 +15,33 @@
     @apply bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200;
 }
 
+/* Cooking-mode timer button — same amber tint family as .metric-timer, but
+   with a border so it reads as INTERACTIVE rather than the passive temperature
+   pill next door. Hover deepens the amber, focus-visible gets a 2px ring. The
+   timer-btn-running / -low / -done classes are toggled by Alpine when a
+   matching timer is alive in this.timers (see cookingMode in app.js). */
+.timer-btn {
+    @apply inline-flex items-baseline rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[0.85em] font-medium text-amber-900 cursor-pointer transition-colors;
+    @apply dark:border-amber-600 dark:bg-amber-900/30 dark:text-amber-200;
+    vertical-align: baseline;
+}
+.timer-btn:hover {
+    @apply bg-amber-100 border-amber-400 dark:bg-amber-900/50 dark:border-amber-500;
+}
+.timer-btn:focus-visible {
+    @apply outline-none ring-2 ring-amber-500 ring-offset-1 dark:ring-offset-stone-950;
+}
+.timer-btn-running {
+    @apply animate-pulse;
+}
+.timer-btn-low {
+    @apply ring-2 ring-amber-400 dark:ring-amber-500;
+}
+.timer-btn-done {
+    @apply ring-2 ring-rose-400 dark:ring-rose-500 animate-pulse bg-rose-50 border-rose-300 text-rose-900;
+    @apply dark:bg-rose-900/30 dark:border-rose-600 dark:text-rose-200;
+}
+
 /* Notes section: relaxed reading typography. */
 .prose-notes {
     @apply text-stone-700 dark:text-stone-300 leading-relaxed;

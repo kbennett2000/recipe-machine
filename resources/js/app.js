@@ -274,10 +274,11 @@ window.shoppingListPage = function () {
 // tick so a backgrounded tab doesn't drift.
 // ============================================================================
 
-window.cookingMode = function (slug, totalSteps, startStep) {
+window.cookingMode = function (slug, totalSteps, startStep, defaultServings) {
     return {
         slug,
         totalSteps,
+        defaultServings: defaultServings || null,
         currentStep: startStep || 1,
         timers: [],
         _tick: 0, // bumped each second to force Alpine reactivity on derived status
@@ -313,6 +314,8 @@ window.cookingMode = function (slug, totalSteps, startStep) {
             }
 
             this._updateUrl();
+            this._applyScale();
+            this._syncInlineButtonStates();
 
             this._tickInterval = setInterval(() => {
                 this._tick += 1;
@@ -324,6 +327,7 @@ window.cookingMode = function (slug, totalSteps, startStep) {
                         this._beep();
                     }
                 }
+                this._syncInlineButtonStates();
             }, 1000);
 
             this._keyHandler = (ev) => {
@@ -400,6 +404,10 @@ window.cookingMode = function (slug, totalSteps, startStep) {
         // ---- Timers ----
 
         startTimer(label, durationSeconds, lowSeconds) {
+            // Dedupe by label: a given label = a given real-world action (e.g.
+            // "35–40 minutes" of baking). If the user navigates between steps
+            // that share a label, both inline buttons reflect the same
+            // underlying timer — see _syncInlineButtonStates.
             if (this.timers.some((t) => t.label === label)) return;
             this.timers.push({
                 id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -409,12 +417,14 @@ window.cookingMode = function (slug, totalSteps, startStep) {
                 low: lowSeconds === null || lowSeconds === undefined ? null : Number(lowSeconds),
             });
             this._saveTimers();
+            this._syncInlineButtonStates();
         },
 
         stopTimer(id) {
             this.timers = this.timers.filter((t) => t.id !== id);
             delete this._beepedTimerIds[id];
             this._saveTimers();
+            this._syncInlineButtonStates();
         },
 
         statusFor(t) {
@@ -462,6 +472,60 @@ window.cookingMode = function (slug, totalSteps, startStep) {
             const url = new URL(window.location.href);
             url.searchParams.set('step', String(this.currentStep));
             window.history.replaceState({}, '', url.toString());
+        },
+
+        // Match inline timer-btn elements to live timers by data-label. Same
+        // label = same underlying timer (startTimer dedupes by label) so when
+        // two steps share a phrase like "10 min" both buttons share state.
+        _syncInlineButtonStates() {
+            const btns = document.querySelectorAll('button.timer-btn');
+            btns.forEach((btn) => {
+                btn.classList.remove('timer-btn-running', 'timer-btn-low', 'timer-btn-done');
+                const label = btn.dataset.label;
+                if (!label) return;
+                const timer = this.timers.find((t) => t.label === label);
+                if (!timer) return;
+                const s = this.statusFor(timer);
+                if (s.complete) {
+                    btn.classList.add('timer-btn-done');
+                } else if (s.low_bound_reached) {
+                    btn.classList.add('timer-btn-low');
+                } else {
+                    btn.classList.add('timer-btn-running');
+                }
+            });
+        },
+
+        // Apply scale from sessionStorage to the ingredients sidebar in the
+        // same way recipeScale.applyScale does on the recipe detail page. The
+        // cook page itself has no servings stepper — it READS the scale the
+        // user set elsewhere. If the recipe has no defaultServings (recipes
+        // without `yields`), there's no scaling to apply.
+        _applyScale() {
+            if (!this.defaultServings) return;
+            const stored = sessionStorage.getItem(`scale:${this.slug}`);
+            if (stored === null) return;
+            const servings = parseInt(stored, 10);
+            if (Number.isNaN(servings) || servings <= 0) return;
+            const scale = servings / this.defaultServings;
+            if (scale === 1) return;
+            const fmt = window.formatIngredient;
+            if (typeof fmt !== 'function') return;
+            document.querySelectorAll('[data-amount]').forEach((el) => {
+                const amount = parseFloat(el.dataset.amount);
+                if (Number.isNaN(amount)) return;
+                const hasHigh = el.dataset.amountHigh !== undefined && el.dataset.amountHigh !== '';
+                const amountHigh = hasHigh ? parseFloat(el.dataset.amountHigh) : null;
+                el.textContent = fmt({
+                    amount: amount * scale,
+                    amount_high: amountHigh !== null ? amountHigh * scale : null,
+                    unit: el.dataset.unit || null,
+                    unit_class: el.dataset.unitClass || null,
+                    ingredient: el.dataset.ingredient || null,
+                    modifier: el.dataset.modifier || null,
+                    optional: el.dataset.optional === '1',
+                });
+            });
         },
 
         async _requestWakeLock() {

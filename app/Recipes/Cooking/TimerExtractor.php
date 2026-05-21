@@ -12,6 +12,9 @@ namespace App\Recipes\Cooking;
  *
  *   - Single: "35 minutes", "1 hour", "30 sec", "5m", "1h", "30s"
  *   - Range:  "35-40 minutes", "60–90 minutes", "30 to 45 min"
+ *   - Cross-unit range: "30 minutes to 1 hour", "45 seconds to 2 minutes"
+ *     (unit-A and unit-B differ; each side gets converted to seconds with
+ *     its own unit, so the low/high pair can span unit boundaries)
  *   - Compound: "1 hour 30 minutes", "1h30m"  (adjacent unit-bearing pairs;
  *     whitespace between them is optional)
  *   - Half-units: "1½ hours", "1 1/2 hours" (unicode and ASCII fractions)
@@ -58,6 +61,13 @@ $unit = '(?:hours|hour|hrs|hr|h|minutes|minute|mins|min|m|seconds|second|secs|se
 
         // Range pattern: <num> [- or to] <num> <unit>
         $rangePattern = "({$numTok})\\s*(?:[-\x{2013}\x{2014}]|\\s+to\\s+)\\s*({$numTok})\\s*({$unit})";
+        // Cross-unit range: <num> <unitA> to <num> <unitB>. Recipes occasionally
+        // write durations that cross unit boundaries — "30 minutes to 1 hour",
+        // "45 seconds to 2 minutes". The connector is always the word "to"
+        // (hyphens don't appear with explicit units on each side in the
+        // corpus). Tried BEFORE compound so we don't fall back to matching
+        // each side as a separate single timer.
+        $crossRangePattern = "({$numTok})\\s*({$unit})\\s+to\\s+({$numTok})\\s*({$unit})";
         // Single pattern: <num> <unit>
         $singlePattern = "({$numTok})\\s*({$unit})";
 
@@ -65,12 +75,13 @@ $unit = '(?:hours|hour|hrs|hr|h|minutes|minute|mins|min|m|seconds|second|secs|se
         // We capture the WHOLE compound run first; then we split it ourselves.
         $compoundPattern = "(?:{$singlePattern})(?:\\s*(?:{$singlePattern}))*";
 
-        // Master pattern: range OR compound. Range is tried first so "30 to 45 min"
-        // wins over the two singles "30" / "45 min". The compound branch will then
-        // catch any non-range timer chains.
+        // Master pattern: cross-unit-range, then same-unit range, then compound.
+        // Order matters — cross-range must come before compound so "30 minutes
+        // to 1 hour" doesn't get split into two singles. Same-unit range comes
+        // before compound so "30 to 45 min" wins over a phantom "45 min" single.
         //
         // We use 'u' for Unicode and '\b' boundaries to avoid matching "5 mg" or "5m" inside "5month".
-        $master = '/('.$rangePattern.'|'.$compoundPattern.')/uS';
+        $master = '/('.$crossRangePattern.'|'.$rangePattern.'|'.$compoundPattern.')/uS';
 
         if (! preg_match_all($master, $methodText, $matches, PREG_OFFSET_CAPTURE)) {
             return [];
@@ -114,7 +125,27 @@ $unit = '(?:hours|hour|hrs|hr|h|minutes|minute|mins|min|m|seconds|second|secs|se
 // trailing "30m".
 $unit = '(?:hours|hour|hrs|hr|h|minutes|minute|mins|min|m|seconds|second|secs|sec|s)(?:\b|(?=\d))';
 
-        // Range first.
+        // Cross-unit range first: "30 minutes to 1 hour". Each side carries
+        // its own unit, so we convert independently into seconds.
+        if (preg_match("/^({$numTok})\\s*({$unit})\\s+to\\s+({$numTok})\\s*({$unit})\$/u", $trimmed, $m)) {
+            $loVal = $this->parseNum($m[1]);
+            $hiVal = $this->parseNum($m[3]);
+            $loSecondsPerUnit = self::UNIT_SECONDS[strtolower($m[2])] ?? null;
+            $hiSecondsPerUnit = self::UNIT_SECONDS[strtolower($m[4])] ?? null;
+            if ($loVal === null || $hiVal === null || $loSecondsPerUnit === null || $hiSecondsPerUnit === null) {
+                return null;
+            }
+            return new TimerMatch(
+                raw: $raw,
+                offset: $offset,
+                length: $length,
+                durationSeconds: (int) round($hiVal * $hiSecondsPerUnit),
+                durationLowSeconds: (int) round($loVal * $loSecondsPerUnit),
+                label: $trimmed,
+            );
+        }
+
+        // Same-unit range next.
         if (preg_match("/^({$numTok})\\s*(?:[-\x{2013}\x{2014}]|\\s+to\\s+)\\s*({$numTok})\\s*({$unit})\$/u", $trimmed, $m)) {
             $loVal = $this->parseNum($m[1]);
             $hiVal = $this->parseNum($m[2]);

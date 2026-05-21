@@ -66,6 +66,24 @@ final class TimerExtractorTest extends TestCase
             'compact compound'     => ['Bake 1h30m',                   [['label' => '1h30m', 'seconds' => 5400, 'low_seconds' => null]]],
             'spaced compound'      => ['Rest 1 hour 30 minutes',       [['label' => '1 hour 30 minutes', 'seconds' => 5400, 'low_seconds' => null]]],
 
+            // ============ Cross-unit ranges (Phase 7.1) ============
+            // The connector is always "to" — recipes don't write things like
+            // "30 minutes-1 hour" with units on both sides.
+            'cross-unit minutes to hour' => [
+                'Wrap dough and let rest for 30 minutes to 1 hour.',
+                [['label' => '30 minutes to 1 hour', 'seconds' => 3600, 'low_seconds' => 1800]],
+            ],
+            'cross-unit seconds to minutes' => [
+                'Bake 45 seconds to 2 minutes',
+                [['label' => '45 seconds to 2 minutes', 'seconds' => 120, 'low_seconds' => 45]],
+            ],
+            // Same-unit range must still produce a single timer — the new
+            // cross-unit branch must not regress here.
+            'same-unit range still works' => [
+                'Cook 15-20 minutes',
+                [['label' => '15-20 minutes', 'seconds' => 1200, 'low_seconds' => 900]],
+            ],
+
             // ============ Negative / non-matches ============
             'no timer in plain text'            => ['Mix until smooth',                  []],
             'temperature not a timer'           => ['Heat to 350°F',                     []],

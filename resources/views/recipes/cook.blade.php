@@ -3,7 +3,7 @@
 @section('title', 'Cook — '.$recipe->title)
 
 @section('content')
-    <div x-data="cookingMode('{{ $recipe->slug }}', {{ $totalSteps }}, {{ $startStep }})" x-init="init()">
+    <div x-data="cookingMode('{{ $recipe->slug }}', {{ $totalSteps }}, {{ $startStep }}, {{ $recipe->yields !== null && $recipe->yields > 0 ? (int) $recipe->yields : 'null' }})" x-init="init()">
 
         {{-- TOP BAR --}}
         <header class="sticky top-0 z-10 border-b border-stone-200 bg-white/95 backdrop-blur dark:border-stone-800 dark:bg-stone-900/95">
