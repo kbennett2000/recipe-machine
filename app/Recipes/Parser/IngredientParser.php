@@ -41,24 +41,49 @@ namespace App\Recipes\Parser;
 final class IngredientParser
 {
     /**
-     * Imprecise leading phrases. The trigger phrase identifies the
-     * canonical; the rest of the line is the ingredient.
+     * Imprecise leading phrases. The trigger phrase identifies the canonical;
+     * the rest of the line is the ingredient.
+     *
+     * Phase 2B.3: bare-form variants ("Pinch salt") are accepted in addition
+     * to the explicit "of" forms ("Pinch of salt"). The leading-without-of
+     * shape applies only to the six volume-imprecise canonicals (pinch,
+     * dash, splash, drizzle, handful, sprinkle). The two trailing-only
+     * canonicals (to-taste, as-needed) are NOT supported in leading
+     * position — they don't make semantic sense there ("to taste salt"
+     * is not natural English; writers say "salt to taste"). They live in
+     * IMPRECISE_TRAILING only.
+     *
+     * Order matters: longer phrases must appear first so the longest-match
+     * wins. "a pinch of" wins over "pinch of" wins over "a pinch" wins over
+     * "pinch" for the input "a pinch of salt".
      *
      * @var array<string,string>
      */
     private const IMPRECISE_LEADING = [
         'a pinch of'    => 'pinch',
         'pinch of'      => 'pinch',
+        'a pinch'       => 'pinch',
+        'pinch'         => 'pinch',
         'a dash of'     => 'dash',
         'dash of'       => 'dash',
+        'a dash'        => 'dash',
+        'dash'          => 'dash',
         'a splash of'   => 'splash',
         'splash of'     => 'splash',
+        'a splash'      => 'splash',
+        'splash'        => 'splash',
         'a drizzle of'  => 'drizzle',
         'drizzle of'    => 'drizzle',
+        'a drizzle'     => 'drizzle',
+        'drizzle'       => 'drizzle',
         'a handful of'  => 'handful',
         'handful of'    => 'handful',
+        'a handful'     => 'handful',
+        'handful'       => 'handful',
         'a sprinkle of' => 'sprinkle',
         'sprinkle of'   => 'sprinkle',
+        'a sprinkle'    => 'sprinkle',
+        'sprinkle'      => 'sprinkle',
     ];
 
     /**

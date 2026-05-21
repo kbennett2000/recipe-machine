@@ -418,7 +418,7 @@ The markers themselves are stripped from the structured fields before parsing �
 
 Imprecise quantity phrases (pinch, dash, handful, drizzle, splash, sprinkle, to taste, as needed — see the canonical-units table above) appear in two natural English patterns:
 
-- **Leading:** `<imprecise> of <ingredient>` — *Pinch of salt*, *Handful of arugula*, *Drizzle of olive oil*, *Splash of vinegar*, *Sprinkle of paprika*.
+- **Leading:** `<imprecise> [of] <ingredient>` — *Pinch of salt*, *Pinch salt*, *Handful of arugula*, *Handful arugula*, *Drizzle of olive oil*, *Splash vinegar*, *Sprinkle paprika*. The `of` is optional.
 - **Trailing:** `<ingredient>[, ] <imprecise>` — *Salt to taste*, *Olive oil as needed*, *Olive oil, as needed*.
 
 All of these produce the same structured shape: `amount: null`, `unit: <canonical>`, `ingredient: <name>`.
@@ -427,10 +427,27 @@ Examples:
 
 - `Salt to taste` → `{amount: null, unit: "to-taste", ingredient: "salt"}`
 - `Pinch of salt` → `{amount: null, unit: "pinch", ingredient: "salt"}` (the `of` is consumed)
+- `Pinch salt` → `{amount: null, unit: "pinch", ingredient: "salt"}` (no `of`; still parses)
 - `Olive oil, as needed` → `{amount: null, unit: "as-needed", ingredient: "olive oil"}` (the comma is consumed; the imprecise phrase lifts to the unit slot even when a comma precedes it)
 - `A handful of arugula` → `{amount: null, unit: "handful", ingredient: "arugula"}`
+- `A pinch kosher salt` → `{amount: null, unit: "pinch", ingredient: "kosher salt"}`
 
 The parser detects the imprecise phrase **before** falling through to the generic `<amount> <unit> <ingredient>[, <modifier>]` shape, so a comma between ingredient and an imprecise trailing phrase does not get interpreted as a modifier delimiter. Writers should write whichever pattern reads naturally; the parser handles both.
+
+**Which canonicals support leading-without-of:**
+
+| Canonical    | Leading `of` form | Leading bare form | Trailing form |
+|--------------|------------------:|------------------:|--------------:|
+| `pinch`      | yes               | yes               | n/a           |
+| `dash`       | yes               | yes               | n/a           |
+| `splash`     | yes               | yes               | n/a           |
+| `drizzle`    | yes               | yes               | n/a           |
+| `handful`    | yes               | yes               | n/a           |
+| `sprinkle`   | yes               | yes               | n/a           |
+| `to-taste`   | n/a               | n/a               | yes           |
+| `as-needed`  | n/a               | n/a               | yes           |
+
+The two trailing-only canonicals (`to-taste`, `as-needed`) don't appear in leading position because "to taste salt" and "as needed olive oil" aren't natural English. Writers always say "salt to taste" and "olive oil as needed".
 
 ### Unparseable lines
 

@@ -1,0 +1,163 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-05-21T12:39:10+00:00",
+    "parse_rate_floor": 0.89453125,
+    "recipes": {
+        "50-50-white-whole-wheat-bread": {
+            "ingredient_count": 8,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
+        "apple-pie": {
+            "ingredient_count": 9,
+            "unparsed_count": 1,
+            "warning_count": 0
+        },
+        "big-soft-pretzels": {
+            "ingredient_count": 14,
+            "unparsed_count": 6,
+            "warning_count": 0
+        },
+        "challah": {
+            "ingredient_count": 8,
+            "unparsed_count": 1,
+            "warning_count": 0
+        },
+        "chicken-parmesan-stuffed-shells": {
+            "ingredient_count": 13,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
+        "chocolate-chip-cookies": {
+            "ingredient_count": 11,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
+        "classic-no-knead-artisan-bread": {
+            "ingredient_count": 5,
+            "unparsed_count": 1,
+            "warning_count": 0
+        },
+        "french-bread": {
+            "ingredient_count": 5,
+            "unparsed_count": 1,
+            "warning_count": 0
+        },
+        "french-silk-pie": {
+            "ingredient_count": 7,
+            "unparsed_count": 1,
+            "warning_count": 0
+        },
+        "garlic-baked-trout": {
+            "ingredient_count": 9,
+            "unparsed_count": 1,
+            "warning_count": 0
+        },
+        "hawaiian-rolls": {
+            "ingredient_count": 15,
+            "unparsed_count": 1,
+            "warning_count": 0
+        },
+        "honey-oat-bread": {
+            "ingredient_count": 7,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
+        "honey-whole-wheat-bread": {
+            "ingredient_count": 7,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
+        "meatballs": {
+            "ingredient_count": 12,
+            "unparsed_count": 1,
+            "warning_count": 0
+        },
+        "navajo-tacos": {
+            "ingredient_count": 10,
+            "unparsed_count": 2,
+            "warning_count": 0
+        },
+        "pasta": {
+            "ingredient_count": 4,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
+        "pasta-sauce": {
+            "ingredient_count": 7,
+            "unparsed_count": 0,
+            "warning_count": 1
+        },
+        "pie-crust": {
+            "ingredient_count": 5,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
+        "potato-bread-ultimate-moisture": {
+            "ingredient_count": 7,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
+        "potato-soup": {
+            "ingredient_count": 14,
+            "unparsed_count": 1,
+            "warning_count": 0
+        },
+        "pretzel-bread-loaves-laugenbrot": {
+            "ingredient_count": 0,
+            "unparsed_count": 0,
+            "warning_count": 1
+        },
+        "red-velvet-cookies": {
+            "ingredient_count": 13,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
+        "royal-groktanstelvanian-sourdough-boule": {
+            "ingredient_count": 5,
+            "unparsed_count": 1,
+            "warning_count": 0
+        },
+        "scallion-pancakes": {
+            "ingredient_count": 11,
+            "unparsed_count": 2,
+            "warning_count": 0
+        },
+        "shrimp-po-boys": {
+            "ingredient_count": 27,
+            "unparsed_count": 7,
+            "warning_count": 0
+        },
+        "soft-sandwich-bread-enriched": {
+            "ingredient_count": 7,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
+        "sourdough-starter": {
+            "ingredient_count": 0,
+            "unparsed_count": 0,
+            "warning_count": 2
+        },
+        "tortillas": {
+            "ingredient_count": 5,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
+        "vanilla-ice-cream": {
+            "ingredient_count": 5,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
+        "your-original-royal-house-loaf-the-moist-masterpiece": {
+            "ingredient_count": 6,
+            "unparsed_count": 0,
+            "warning_count": 0
+        }
+    },
+    "resolved_refs": [
+        "apple-pie -> pie-crust",
+        "french-silk-pie -> pie-crust",
+        "pretzel-bread-loaves-laugenbrot -> big-soft-pretzels",
+        "royal-groktanstelvanian-sourdough-boule -> sourdough-starter"
+    ]
+}

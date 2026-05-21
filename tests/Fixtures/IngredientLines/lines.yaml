@@ -118,6 +118,29 @@ cases:
     input: "Drizzle of olive oil"
     expected: { parsed: true, amount: null, unit: drizzle, ingredient: "olive oil" }
 
+  # Phase 2B.3: leading-without-of variants. The bread/recipes codexes
+  # contained at least one "Pinch kosher salt" line (vanilla ice cream)
+  # that fell through to parsed:false before this fix.
+  - name: imprecise-pinch-kosher-salt-no-of
+    input: "Pinch kosher salt"
+    expected: { parsed: true, amount: null, unit: pinch, ingredient: "kosher salt" }
+
+  - name: imprecise-dash-cayenne-no-of
+    input: "Dash cayenne"
+    expected: { parsed: true, amount: null, unit: dash, ingredient: cayenne }
+
+  - name: imprecise-handful-arugula-no-of
+    input: "Handful arugula"
+    expected: { parsed: true, amount: null, unit: handful, ingredient: arugula }
+
+  - name: imprecise-sprinkle-parsley-no-of
+    input: "Sprinkle parsley"
+    expected: { parsed: true, amount: null, unit: sprinkle, ingredient: parsley }
+
+  - name: imprecise-a-pinch-salt-no-of
+    input: "A pinch salt"
+    expected: { parsed: true, amount: null, unit: pinch, ingredient: salt }
+
   # ----- Imprecise trailing -----
   - name: trailing-salt-to-taste
     input: "Salt to taste"

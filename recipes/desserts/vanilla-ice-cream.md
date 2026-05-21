@@ -5,13 +5,16 @@ slug: vanilla-ice-cream
 tags: []
 ---
 
-## Ingredients
+## Notes
 
 - This ice cream can easily be dressed up by adding your favorite chopped candies or sprinkles at the end of churning.
 - Makes about 7 cups (fourteen ½-cup servings)
+
+## Ingredients
+
 - 1 1/2 cups whole milk
 - 1 cup plus 2 tablespoons granulated sugar
-- Pinch kosher salt
+- Pinch of kosher salt
 - 3 cups heavy cream
 - 1 1/2 tablespoons pure vanilla extract
 

@@ -16,8 +16,9 @@ libation: "Crisp German Hefeweizen—its banana-clove notes lift the subtle swee
 - 4 tsp salt
 - 3 cups water
 - 2 teaspoons baking powder
+
+## Notes
 - Optional enrichment: 1 egg (for superior moisture and tenderness), extra flour
-- Bake 60 minutes at 350°F
 
 ## Method
 

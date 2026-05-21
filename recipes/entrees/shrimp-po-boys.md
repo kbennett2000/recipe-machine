@@ -38,19 +38,21 @@ tags: []
 
 ## Method
 
-1. For the Remoulade Sauce
-2. Mix everything together and chill in the refrigerator until you are finished frying the shrimp
-3. For the Fried Shrimp
-4. Mix the salt, paprika, garlic powder, cayenne pepper, and black pepper together then divide the spice mixture in half
-5. Season the shrimp with half of the spice mixture
-6. Mix the flour, cornmeal and the rest of the spice mixture together in a bowl
-7. In a separate bowl, mix the buttermilk and hot sauce together
-8. Dip seasoned shrimp in the buttermilk, then coat with flour mixture shaking off any excess. If you like a thicker coating you can repeat this step.
-9. Chill the shrimp in the refrigerator for 20 minutes.
-10. Pour the oil into a deep, wide pot to the depth of about 2 inches. Heat the oil to 350° Fahrenheit
-11. Working in batches, fry shrimp until golden brown about 3-4 minutes per batch. Transfer to paper towels to drain.
-12. To Assemble Po'Boy
-13. Build your sandwich with on the French bread with mayonnaise or Remoulade, dress your sandwich with lettuce, tomato, and pickles then pile on the shrimp.
+### For the Remoulade Sauce
+1. Mix everything together and chill in the refrigerator until you are finished frying the shrimp
+
+### For the Fried Shrimp
+1. Mix the salt, paprika, garlic powder, cayenne pepper, and black pepper together then divide the spice mixture in half
+2. Season the shrimp with half of the spice mixture
+3. Mix the flour, cornmeal and the rest of the spice mixture together in a bowl
+4. In a separate bowl, mix the buttermilk and hot sauce together
+5. Dip seasoned shrimp in the buttermilk, then coat with flour mixture shaking off any excess. If you like a thicker coating you can repeat this step.
+6. Chill the shrimp in the refrigerator for 20 minutes.
+7. Pour the oil into a deep, wide pot to the depth of about 2 inches. Heat the oil to 350° Fahrenheit
+8. Working in batches, fry shrimp until golden brown about 3-4 minutes per batch. Transfer to paper towels to drain.
+
+### To Assemble Po'Boy
+1. Build your sandwich with on the French bread with mayonnaise or Remoulade, dress your sandwich with lettuce, tomato, and pickles then pile on the shrimp.
 
 ## Notes
 
