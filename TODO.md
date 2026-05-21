@@ -66,6 +66,25 @@ ships or in a Phase 11 polish pass.
       real problem the moment a recipe uses italics in a method
       step. Audit MethodFormatter, and either extend both formatters
       or document the supported subset in docs/recipe-format.md.
+- [ ] Install Node in the Dockerfile so the PHP↔JS parity test runs
+      in CI / container builds. Currently the parity test silently
+      skips if Node isn't installed in the running container, which
+      hides real formatter divergences. Folding `apt-get install
+      nodejs` (or a node base image stage) into Dockerfile.app would
+      make the parity test actually run on every container build.
+- [ ] Distinguish LLM miss types in the cache. Currently
+      `ingredient_llm_cache.status='miss'` collapses two cases:
+      (a) the LLM returned null (legitimate non-ingredient
+      rejection), and (b) the LLM returned a structured object
+      that failed our schema/unit validation. Storing a short
+      `miss_kind` enum ('null', 'invalid_schema', 'invalid_unit')
+      would let future inspection know which case fired.
+- [ ] Prompt tweak: discourage the LLM from putting "up to" in
+      the note field when amount_high-without-amount is the
+      pattern. The formatter renders "up to" as a prefix
+      automatically; the redundant note is harmless but
+      cosmetically noisy. Small prompt revision after collecting
+      more real-world examples.
 
 ## Content-side cleanups
 
@@ -77,6 +96,11 @@ ships or in a Phase 11 polish pass.
       rewritten as `### Remoulade Sauce`, `### Fried Shrimp`,
       `### Po'Boy Assembly` headers. Mirrors the method-side cleanup
       done in Phase 2C. (navajo-tacos already uses this convention.)
+- [ ] "baking soda bath" line in big-soft-pretzels resolves to
+      baking soda (correctly) but loses the "bath" context, which
+      matters for shopping-list aggregation. Either hand-edit the
+      source line to split bath usage from topping usage, or wait
+      for a future "ingredient role" feature.
 
 ## Won't-fix / out-of-scope decisions
 
