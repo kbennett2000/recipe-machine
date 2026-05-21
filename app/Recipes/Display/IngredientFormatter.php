@@ -119,6 +119,18 @@ final class IngredientFormatter
             return 'a '.$unit.' of '.$ingredient.$optionalTag;
         }
 
+        // Phase 9.2: amount-high-only renders with an "up to" prefix.
+        // "Up to 1/4 cup oil" reads naturally; rendering just "cup oil"
+        // (the pre-fix behavior) lost the quantity entirely. The LLM
+        // fallback produces this shape for "up to N" phrasing; the rules-
+        // based parser doesn't, but the formatter handles it for both.
+        $upToPrefix = '';
+        if ($amount === null && $amountHigh !== null) {
+            $upToPrefix = 'up to ';
+            $amount = $amountHigh;
+            $amountHigh = null;
+        }
+
         // Generic: <amount> <unit> <ingredient>[, <modifier>]
         $parts = [];
 
@@ -136,7 +148,7 @@ final class IngredientFormatter
             $parts[] = $ingredient;
         }
 
-        $line = trim(implode(' ', $parts));
+        $line = trim($upToPrefix.implode(' ', $parts));
         if ($modifier !== null && $modifier !== '') {
             $line .= ', '.$modifier;
         }

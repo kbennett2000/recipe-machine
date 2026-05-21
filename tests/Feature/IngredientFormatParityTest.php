@@ -172,6 +172,14 @@ final class IngredientFormatParityTest extends TestCase
 
             // === Edge: amountIsPlural with range (high > 1) ===
             ['amount' => 0.5, 'amount_high' => 1.5, 'unit' => 'cup', 'ingredient' => 'sauce'],
+
+            // === Phase 9.2: amount_high without amount → "up to" prefix ===
+            // Comes from LLM-parsed "Up to 1/4 cup ..." shapes.
+            ['amount' => null, 'amount_high' => 0.25, 'unit' => 'cup', 'ingredient' => 'sesame seed oil'],
+            ['amount' => null, 'amount_high' => 1, 'unit' => 'tbsp', 'ingredient' => 'lemon juice'],
+            ['amount' => null, 'amount_high' => 30, 'unit' => 'g', 'ingredient' => 'butter'],
+            // Stretch coverage: amount_high-only with modifier and unit=whole.
+            ['amount' => null, 'amount_high' => 2, 'unit' => 'whole', 'ingredient' => 'eggs', 'modifier' => 'beaten'],
         ];
     }
 }

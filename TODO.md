@@ -67,6 +67,17 @@ ships or in a Phase 11 polish pass.
       step. Audit MethodFormatter, and either extend both formatters
       or document the supported subset in docs/recipe-format.md.
 
+## Content-side cleanups
+
+- [ ] Convert shrimp-po-boys ingredient sub-group bullets to `###`
+      headers. The recipe currently has `- For the Remoulade Sauce`,
+      `- For the Fried Shrimp`, `- For the Po'Boy Assembly` as bullet
+      items, which the LLM correctly tombstones as non-ingredients
+      but which would render with proper sub-group styling if
+      rewritten as `### Remoulade Sauce`, `### Fried Shrimp`,
+      `### Po'Boy Assembly` headers. Mirrors the method-side cleanup
+      done in Phase 2C. (navajo-tacos already uses this convention.)
+
 ## Won't-fix / out-of-scope decisions
 
 - T/t single-letter unit forms (dropped in Phase 2A.1, documented in spec).

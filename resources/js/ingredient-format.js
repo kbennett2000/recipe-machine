@@ -63,15 +63,27 @@ export function formatIngredient(fields) {
         return 'a ' + unit + ' of ' + ingredient + optionalTag;
     }
 
+    // Phase 9.2: amount-high-only renders with an "up to" prefix. Mirrors
+    // the PHP twin — keep this branch byte-identical so the parity test
+    // stays green.
+    let upToPrefix = '';
+    let amt = amount;
+    let amtHi = amountHigh;
+    if (amt === null && amtHi !== null && amtHi !== undefined) {
+        upToPrefix = 'up to ';
+        amt = amtHi;
+        amtHi = null;
+    }
+
     // Generic.
     const parts = [];
 
-    if (amount !== null) {
-        parts.push(formatAmount(amount, amountHigh, unit));
+    if (amt !== null) {
+        parts.push(formatAmount(amt, amtHi, unit));
     }
 
     if (unit !== null && unit !== 'whole') {
-        const isPlural = amountIsPlural(amount, amountHigh);
+        const isPlural = amountIsPlural(amt, amtHi);
         const display = UNIT_DISPLAY[unit] || { singular: unit, plural: unit };
         parts.push(isPlural ? display.plural : display.singular);
     }
@@ -80,7 +92,7 @@ export function formatIngredient(fields) {
         parts.push(ingredient);
     }
 
-    let line = parts.join(' ').trim();
+    let line = (upToPrefix + parts.join(' ')).trim();
     if (modifier !== null && modifier !== '') {
         line += ', ' + modifier;
     }
