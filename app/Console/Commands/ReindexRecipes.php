@@ -9,6 +9,7 @@ use App\Models\MethodStep;
 use App\Models\Recipe;
 use App\Models\RecipeReference;
 use App\Models\RecipeTag;
+use App\Recipes\Display\IngredientFormatter;
 use App\Recipes\Parser\RecipeParser;
 use App\Recipes\Parser\UnitClass;
 use App\Recipes\Parser\UnitMatcher;
@@ -45,6 +46,7 @@ final class ReindexRecipes extends Command
     public function __construct(
         private readonly RecipeParser $parser = new RecipeParser,
         private readonly UnitMatcher $unitMatcher = new UnitMatcher,
+        private readonly IngredientFormatter $ingredientFormatter = new IngredientFormatter,
     ) {
         parent::__construct();
     }
@@ -119,16 +121,23 @@ final class ReindexRecipes extends Command
             }
         });
 
+        // Pass 3: populate the FTS5 search index (skipped on non-SQLite drivers).
+        $searchRows = 0;
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            $searchRows = $this->rebuildSearchIndex();
+        }
+
         $elapsed = microtime(true) - $startedAt;
 
         $this->line('');
         $this->line(sprintf(
-            'Indexed %d recipes · %d ingredients · %d method steps · %d resolved refs · %d unresolved refs · %.2fs',
+            'Indexed %d recipes · %d ingredients · %d method steps · %d resolved refs · %d unresolved refs · %d search rows · %.2fs',
             $totals['recipes'],
             $totals['ingredients'],
             $totals['method_steps'],
             $resolved,
             $unresolved,
+            $searchRows,
             $elapsed,
         ));
         if ($totals['skipped'] > 0) {
@@ -152,6 +161,14 @@ final class ReindexRecipes extends Command
             DB::statement("DELETE FROM sqlite_sequence WHERE name IN ('recipes','ingredients','method_steps','recipe_tags','recipe_references')");
         } catch (\Throwable) {
             // Non-SQLite — ignore.
+        }
+        // Clear the FTS5 search index if present.
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            try {
+                DB::statement('DELETE FROM recipe_search');
+            } catch (\Throwable) {
+                // Table may not exist yet (first reindex post-migration); ignore.
+            }
         }
         Schema::enableForeignKeyConstraints();
     }
@@ -314,5 +331,67 @@ final class ReindexRecipes extends Command
             RecipeReference::insert($rows);
         }
         return count($rows);
+    }
+
+    /**
+     * Build the FTS5 search index from the freshly-written canonical tables.
+     *
+     * For each recipe, we denormalize ingredient lines and method steps into
+     * single text columns. Parsed ingredients use their structured prose form
+     * (e.g. "2 cups flour" — what the user actually reads); unparsed lines
+     * fall back to raw text so they remain searchable. Ingredient modifiers,
+     * notes-on-ingredient, and sub-group names also feed into the index so
+     * a query like "minced garlic" or "filling walnuts" matches.
+     */
+    private function rebuildSearchIndex(): int
+    {
+        $rows = 0;
+        Recipe::with(['ingredients', 'methodSteps'])->orderBy('id')->chunk(50, function ($recipes) use (&$rows) {
+            foreach ($recipes as $recipe) {
+                DB::insert(
+                    'INSERT INTO recipe_search (slug, title, ingredients_text, method_text, notes_text, libation_text) VALUES (?, ?, ?, ?, ?, ?)',
+                    [
+                        $recipe->slug,
+                        $recipe->title,
+                        $this->buildIngredientsText($recipe),
+                        $this->buildMethodText($recipe),
+                        (string) ($recipe->notes ?? ''),
+                        trim(((string) ($recipe->libation ?? '')).' '.((string) ($recipe->libation_prose ?? ''))),
+                    ]
+                );
+                $rows++;
+            }
+        });
+        return $rows;
+    }
+
+    private function buildIngredientsText(Recipe $recipe): string
+    {
+        $parts = [];
+        $seenGroups = [];
+        foreach ($recipe->ingredients as $ing) {
+            // Sub-group name: include each group label once so queries against
+            // group names (e.g. "filling", "glaze", "remoulade") match.
+            if ($ing->group_name !== null && $ing->group_name !== '' && ! isset($seenGroups[$ing->group_name])) {
+                $parts[] = $ing->group_name;
+                $seenGroups[$ing->group_name] = true;
+            }
+            if ($ing->parsed) {
+                $parts[] = $this->ingredientFormatter->format($ing);
+                if ($ing->note !== null && $ing->note !== '') {
+                    $parts[] = $ing->note;
+                }
+            } else {
+                $parts[] = $ing->raw;
+            }
+        }
+        return implode("\n", $parts);
+    }
+
+    private function buildMethodText(Recipe $recipe): string
+    {
+        return $recipe->methodSteps
+            ->pluck('content')
+            ->implode("\n");
     }
 }

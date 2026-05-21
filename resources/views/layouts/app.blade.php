@@ -22,13 +22,35 @@
         );
     @endphp
 
-    <div class="min-h-full flex flex-col">
+    <div class="min-h-full flex flex-col"
+         x-data="{}"
+         @keydown.window.slash="
+            if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+            $event.preventDefault();
+            document.getElementById('global-search-input')?.focus();
+         ">
         <header class="border-b border-stone-200 bg-white/95 backdrop-blur dark:border-stone-800 dark:bg-stone-900/95 sticky top-0 z-10">
-            <div class="mx-auto flex max-w-6xl flex-col items-start gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                <a href="{{ url('/') }}" class="font-display text-2xl font-semibold tracking-tight">
+            <div class="mx-auto flex max-w-6xl flex-col items-start gap-3 px-6 py-4 lg:flex-row lg:items-center lg:gap-5">
+                <a href="{{ url('/') }}" class="font-display text-2xl font-semibold tracking-tight whitespace-nowrap">
                     Recipe Machine
                 </a>
-                <nav class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+
+                {{-- Global search box --}}
+                <form action="{{ route('search') }}" method="get" class="relative w-full lg:max-w-sm">
+                    <label for="global-search-input" class="sr-only">Search recipes</label>
+                    <input
+                        id="global-search-input"
+                        type="search"
+                        name="q"
+                        value="{{ request()->routeIs('search') ? request()->query('q', '') : '' }}"
+                        placeholder="Search recipes…"
+                        autocomplete="off"
+                        class="w-full rounded-md border border-stone-300 bg-white px-3 py-1.5 pr-8 text-sm text-stone-900 placeholder-stone-400 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/30 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100 dark:placeholder-stone-500 dark:focus:border-amber-600"
+                    >
+                    <kbd class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 hidden rounded border border-stone-300 bg-stone-50 px-1.5 text-xs text-stone-500 dark:border-stone-600 dark:bg-stone-700 dark:text-stone-400 sm:inline">/</kbd>
+                </form>
+
+                <nav class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm lg:ml-auto">
                     @foreach ($navCategories as $cat)
                         @if ($cat['count'] > 0)
                             <a href="{{ route('categories.show', ['category' => $cat['slug']]) }}"
@@ -43,7 +65,7 @@
                             </span>
                         @endif
                     @endforeach
-                    <span class="text-stone-400 dark:text-stone-600 cursor-default border-l border-stone-200 dark:border-stone-700 pl-5">
+                    <span class="text-stone-400 dark:text-stone-600 cursor-default border-l border-stone-200 dark:border-stone-700 pl-4">
                         Shopping List <span class="text-xs">soon</span>
                     </span>
                 </nav>
