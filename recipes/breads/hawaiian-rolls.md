@@ -16,7 +16,7 @@ tags: []
 - 2 tablespoons (25 grams) light brown sugar
 - 2 eggs, at room temperature
 - 1 teaspoon vanilla extract
-- 2 1/4 teaspoons (1 packet) instant yeast2
+- 2 1/4 teaspoons (1 packet) instant yeast
 - 4 cups + 1 tablespoon (516 grams) – 4 1/4 cups (540 grams) bread flour
 - 1/4 cup (32 grams) all-purpose flour
 - 1 1/2 teaspoons fine sea salt

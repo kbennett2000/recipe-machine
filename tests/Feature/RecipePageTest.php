@@ -93,4 +93,24 @@ final class RecipePageTest extends IndexedCorpusTestCase
         $response->assertSee('Libation');
         $response->assertSee('Semi-sweet mead');
     }
+
+    public function test_stub_recipe_redirects_ingredients_to_referenced_recipe(): void
+    {
+        // Pretzel Bread Loaves has 0 ingredients and a frontmatter
+        // references: [big-soft-pretzels] entry. The Ingredients sidebar
+        // should point the reader at that recipe rather than show an
+        // inert "(No ingredients recorded)" placeholder.
+        $response = $this->get('/recipes/pretzel-bread-loaves-laugenbrot');
+        $response->assertStatus(200);
+
+        $body = $response->getContent();
+        // The sidebar should mention Big Soft Pretzels and link to it.
+        $this->assertStringContainsString('Big Soft Pretzels', $body);
+        $this->assertStringContainsString(
+            route('recipes.show', ['recipe' => 'big-soft-pretzels']),
+            $body,
+        );
+        // The inert placeholder should NOT appear when references are present.
+        $this->assertStringNotContainsString('(No ingredients recorded)', $body);
+    }
 }

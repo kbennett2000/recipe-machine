@@ -95,9 +95,29 @@
             <h2 class="font-display text-xl font-semibold mb-4 text-stone-900 dark:text-stone-100">Ingredients</h2>
 
             @if ($recipe->ingredients->isEmpty())
-                <p class="text-sm italic text-stone-500 dark:text-stone-500">
-                    (No ingredients recorded)
-                </p>
+                @php
+                    // Stub-recipe pattern: zero ingredients + at least one resolved
+                    // frontmatter reference (e.g. "Pretzel Bread Loaves" uses the
+                    // same dough as "Big Soft Pretzels"). Point the reader at
+                    // those source recipes instead of an inert placeholder.
+                    $resolvedRefs = $recipe->references
+                        ->where('source', 'frontmatter')
+                        ->filter(fn ($r) => $r->resolved_recipe_id !== null);
+                @endphp
+                @if ($resolvedRefs->isNotEmpty())
+                    <p class="text-sm text-stone-700 dark:text-stone-300 leading-snug">
+                        See
+                        @foreach ($resolvedRefs as $ref)
+                            <a href="{{ route('recipes.show', ['recipe' => $ref->resolvedRecipe->slug]) }}"
+                               class="text-amber-700 underline decoration-amber-700/30 underline-offset-2 hover:decoration-amber-700 dark:text-amber-300 dark:decoration-amber-300/30 dark:hover:decoration-amber-300">{{ $ref->resolvedRecipe->title }}</a>{{ ! $loop->last ? ' and ' : '' }}
+                        @endforeach
+                        for ingredients.
+                    </p>
+                @else
+                    <p class="text-sm italic text-stone-500 dark:text-stone-500">
+                        (No ingredients recorded)
+                    </p>
+                @endif
             @else
                 @foreach ($groupedIngredients as $groupName => $items)
                     @if ($groupName !== '')
