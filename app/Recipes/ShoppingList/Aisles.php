@@ -199,6 +199,15 @@ final class Aisles
         'black beans' => self::PANTRY,
         'breadcrumbs' => self::PANTRY,
         'panko' => self::PANTRY,
+        // Specific broth/stock variants (Phase 6.1 fix). These must outrank the
+        // meat-name rules below; longest-match-wins gives us that for free.
+        'chicken broth' => self::PANTRY,
+        'chicken stock' => self::PANTRY,
+        'beef broth' => self::PANTRY,
+        'beef stock' => self::PANTRY,
+        'vegetable broth' => self::PANTRY,
+        'vegetable stock' => self::PANTRY,
+        'bone broth' => self::PANTRY,
         'broth' => self::PANTRY,
         'stock' => self::PANTRY,
         'tomato sauce' => self::PANTRY,

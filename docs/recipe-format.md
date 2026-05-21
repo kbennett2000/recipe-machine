@@ -434,6 +434,10 @@ Examples:
 
 The parser detects the imprecise phrase **before** falling through to the generic `<amount> <unit> <ingredient>[, <modifier>]` shape, so a comma between ingredient and an imprecise trailing phrase does not get interpreted as a modifier delimiter. Writers should write whichever pattern reads naturally; the parser handles both.
 
+**Known limitations:**
+
+- Compound trailing phrases like `salt, or to taste` or `pepper or as needed` are NOT recognized as imprecise trailing patterns; the parser treats the `or to taste` fragment as part of the modifier (and downstream the ingredient name often ends up including the truncated "or" suffix). Writers should use the em-dash form (`salt — adjust to taste`) to express this cleanly — the em-dash splits a `note` off, and the structured fields then come out clean (`amount=0.5`, `unit=tsp`, `ingredient="salt"`, `note="adjust to taste"`). A future parser pass may recognize compound `or <imprecise>` suffixes natively; for now, the em-dash form is recommended.
+
 **Which canonicals support leading-without-of:**
 
 | Canonical    | Leading `of` form | Leading bare form | Trailing form |

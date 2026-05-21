@@ -16,8 +16,8 @@ tags: []
 - 10 slices cooked bacon, diced
 - 1 tablespoon dried parsley
 - 3 cups chicken broth
-- ½ teaspoon salt, or to taste
-- ¾ teaspoon black pepper, or to taste
+- 1/2 tsp salt — adjust to taste
+- 3/4 tsp black pepper — adjust to taste
 - 4 tablespoons unsalted butter
 - 1/3 cup all-purpose flour
 - 12 ounces evaporated milk, or half & half, or heavy cream
