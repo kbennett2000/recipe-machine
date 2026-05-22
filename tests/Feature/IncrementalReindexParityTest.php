@@ -200,17 +200,27 @@ final class IncrementalReindexParityTest extends TestCase
             'FTS index should still match "honey" against honey-oat-bread after a single-slug reindex');
     }
 
-    public function test_full_corpus_30_recipes_still_round_trip_after_per_recipe_pass(): void
+    public function test_full_corpus_still_round_trips_after_per_recipe_pass(): void
     {
         // Sanity: after running reindexOne for every recipe, the corpus
-        // count and resolved-refs count match the baseline.
+        // count and the resolved-refs count match what a full reindex
+        // produces. Both numbers are derived from the actual corpus,
+        // not hard-coded — adding a recipe (and rerunning the
+        // baseline-aware reindex) shouldn't trip this test.
         $reindexer = new RecipeReindexer;
+        $totalRecipes = Recipe::query()->count();
+        $resolvedBefore = RecipeReference::query()->whereNotNull('resolved_recipe_id')->count();
+
         foreach (Recipe::query()->pluck('slug') as $slug) {
             $reindexer->reindexOne($slug);
         }
-        $this->assertSame(30, Recipe::query()->count());
-        $resolved = RecipeReference::query()->whereNotNull('resolved_recipe_id')->count();
-        $this->assertSame(4, $resolved, 'Should still have 4 resolved cross-references after per-recipe reindex');
+
+        $this->assertSame($totalRecipes, Recipe::query()->count(),
+            'Per-recipe reindex must not change the total recipe count.');
+        $this->assertSame($resolvedBefore, RecipeReference::query()->whereNotNull('resolved_recipe_id')->count(),
+            'Per-recipe reindex must preserve the resolved-cross-refs count.');
+        $this->assertSame(0, RecipeReference::query()->whereNull('resolved_recipe_id')->count(),
+            'No cross-references should drop to unresolved after per-recipe reindex.');
     }
 
     /**

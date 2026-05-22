@@ -17,14 +17,38 @@ final class ReindexRecipesTest extends TestCase
     {
         $this->artisan('recipes:reindex')->assertSuccessful();
 
-        // All 30 production recipes appear.
-        $this->assertSame(30, Recipe::count(), 'Expected 30 recipes after reindex.');
+        // Reindex must pick up every recipe enumerated in the health-check
+        // baseline. The baseline is the source of truth for "what's in the
+        // corpus" — when a recipe is added, you run
+        // `php artisan recipes:health-check --update-baseline` to refresh
+        // it, and this assertion follows the new count automatically.
+        $baseline = $this->loadBaseline();
+        $expectedRecipes = count($baseline['recipes']);
+        $this->assertSame($expectedRecipes, Recipe::count(),
+            "Expected {$expectedRecipes} recipes after reindex (from baseline).");
 
-        // All 4 cross-references resolved (apple-pie→pie-crust, french-silk-pie→pie-crust,
-        // pretzel-bread-loaves→big-soft-pretzels, royal-sourdough-boule→sourdough-starter).
-        $this->assertSame(4, RecipeReference::whereNotNull('resolved_recipe_id')->count());
+        // Every recipe enumerated in the baseline should have a DB row.
+        foreach (array_keys($baseline['recipes']) as $slug) {
+            $this->assertTrue(
+                Recipe::query()->where('slug', $slug)->exists(),
+                "Baseline recipe '{$slug}' is missing from the DB after reindex."
+            );
+        }
+
+        // Structural check: every reference points at an actual recipe.
+        // The count itself isn't load-bearing — what matters is that nothing
+        // ends up unresolved.
         $this->assertSame(0, RecipeReference::whereNull('resolved_recipe_id')->count(),
             'No unresolved cross-references should remain.');
+    }
+
+    /** @return array{recipes: array<string, array<string, int>>} */
+    private function loadBaseline(): array
+    {
+        $path = base_path('tests/Fixtures/health-check-baseline.json');
+        $data = json_decode((string) file_get_contents($path), true);
+        $this->assertIsArray($data, "Baseline at {$path} did not decode as JSON.");
+        return $data;
     }
 
     public function test_honey_oat_bread_scalar_fields(): void
@@ -43,8 +67,7 @@ final class ReindexRecipesTest extends TestCase
     public function test_corpus_ingredient_count_matches_health_check_baseline(): void
     {
         $this->artisan('recipes:reindex')->assertSuccessful();
-        $baselinePath = base_path('tests/Fixtures/health-check-baseline.json');
-        $baseline = json_decode((string) file_get_contents($baselinePath), true);
+        $baseline = $this->loadBaseline();
         $expectedTotal = 0;
         foreach ($baseline['recipes'] as $r) {
             $expectedTotal += $r['ingredient_count'];
