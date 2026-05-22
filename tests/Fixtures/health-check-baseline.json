@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
-    "generated_at": "2026-05-21T12:39:10+00:00",
-    "parse_rate_floor": 0.89453125,
+    "generated_at": "2026-05-22T13:55:30+00:00",
+    "parse_rate_floor": 0.9026217228464419,
     "recipes": {
         "50-50-white-whole-wheat-bread": {
             "ingredient_count": 8,
@@ -78,6 +78,11 @@
             "unparsed_count": 2,
             "warning_count": 0
         },
+        "oatmeal-raisin-cookies": {
+            "ingredient_count": 11,
+            "unparsed_count": 0,
+            "warning_count": 0
+        },
         "pasta": {
             "ingredient_count": 4,
             "unparsed_count": 0,
@@ -120,7 +125,7 @@
         },
         "scallion-pancakes": {
             "ingredient_count": 11,
-            "unparsed_count": 2,
+            "unparsed_count": 1,
             "warning_count": 0
         },
         "shrimp-po-boys": {

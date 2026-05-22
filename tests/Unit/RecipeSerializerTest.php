@@ -9,6 +9,7 @@ use App\Recipes\Parser\ParsedIngredient;
 use App\Recipes\Parser\ParsedRecipe;
 use App\Recipes\Parser\RecipeParser;
 use App\Recipes\Serializer\RecipeSerializer;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -256,8 +257,8 @@ final class RecipeSerializerTest extends TestCase
      * the markdown parser's tokenizer. End-to-end form-state submission
      * with each shape must round-trip with the amount preserved.
      *
-     * @dataProvider amountShapesProvider
      */
+    #[DataProvider('amountShapesProvider')]
     public function test_form_mode_state_accepts_fraction_amount_shapes(mixed $rawAmount, ?float $expected): void
     {
         $stateArray = [

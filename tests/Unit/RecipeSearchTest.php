@@ -104,18 +104,21 @@ final class RecipeSearchTest extends TestCase
 
     public function test_empty_query_with_category_filter_sorts_alphabetically(): void
     {
-        $results = $this->search->query('', ['category' => 'desserts']);
-        $slugs = $results->slugs();
-        // Alphabetical by title: Apple Pie, Chocolate Chip Cookies, French Silk Pie,
-        // Pie Crust, Red Velvet Cookies, Vanilla Ice Cream.
-        $this->assertSame([
-            'apple-pie',
-            'chocolate-chip-cookies',
-            'french-silk-pie',
-            'pie-crust',
-            'red-velvet-cookies',
-            'vanilla-ice-cream',
-        ], $slugs);
+        // Pull the canonical "all desserts sorted by title" list straight
+        // from the DB and assert the search service returns the same. This
+        // tests alphabetical-sort behavior without hard-coding which
+        // recipes are in the desserts category — adding a new dessert
+        // (which the v1.1 web editor makes a 30-second task) shouldn't
+        // break this assertion.
+        $expected = \App\Models\Recipe::query()
+            ->where('category', 'desserts')
+            ->orderBy('title')
+            ->pluck('slug')
+            ->all();
+        $this->assertNotEmpty($expected, 'Test fixture: desserts category should have recipes.');
+
+        $slugs = $this->search->query('', ['category' => 'desserts'])->slugs();
+        $this->assertSame($expected, $slugs);
     }
 
     public function test_no_match_returns_empty_results(): void

@@ -99,7 +99,7 @@
 
         <footer class="border-t border-stone-200 dark:border-stone-800 mt-12">
             <div class="mx-auto max-w-6xl px-6 py-6 text-xs text-stone-500 dark:text-stone-500">
-                Recipe Machine · Phase 3 — browsing online
+                Recipe Machine · v1.1 — editing online
             </div>
         </footer>
     </div>

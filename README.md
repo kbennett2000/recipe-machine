@@ -1,8 +1,8 @@
 # Recipe Machine
 
 > A self-hosted recipe library that turns a directory of markdown
-> files into a searchable, scalable, shopping-list-generating web
-> app. Designed for the home LAN.
+> files into a searchable, scalable, shopping-list-generating,
+> editable web app. Designed for the home LAN.
 
 ![Home page](docs/screenshots/home.png)
 
@@ -18,10 +18,10 @@ Browsers want HTML, not folders of `.md` files.
 So this is the smallest possible thing that fixes that: a
 single-container web app that **treats the markdown files as the
 source of truth** and the SQLite database as a cache built from
-them. You edit recipes in your editor of choice, run `make
-reindex`, and the web UI catches up. No CMS, no admin panel, no
-"edit recipe" form. The DB never owns anything the markdown
-doesn't.
+them. v1.1 added a form-based web editor so you can also create,
+edit, and delete recipes without leaving the browser — but the
+editor writes to the same `.md` files. The DB never owns anything
+the markdown doesn't.
 
 Where the rules-based ingredient parser falls down — and recipes
 in the wild are full of edge cases — there's an
@@ -47,6 +47,12 @@ phones home at request time.
   similarity "Similar recipes" section, plus an [/recipes index
   page](docs/screenshots/recipes-index.png) that visualizes the
   whole cross-link graph for the maintainer.
+- **Editing** — create new recipes or edit existing ones in a
+  form-based editor with live preview, sortable ingredient rows,
+  sub-groups, and a raw-markdown mode for power users. Unparsed
+  lines surface in a "Verify these" section with a one-click
+  Convert-to-structured action. See
+  [docs/editing.md](docs/editing.md) for the workflow.
 
 ## Screenshots
 
@@ -86,15 +92,35 @@ could use a `[[ref]]`.
 FTS5 across title, ingredient lines, method text, and notes.
 Sub-second on this corpus.
 
+### Form-mode editor with live preview
+![Form-mode editor — Honey Oat Bread](docs/screenshots/p11e-form-honey-oat.png)
+
+Every field is bound to a live preview pane on the right. Reorder
+ingredient rows by drag, toggle to raw markdown for power-user
+edits, save back to the same `.md` file.
+
+### Creating a new recipe with live slug derivation
+![New recipe form with slug preview](docs/screenshots/p11g-slug-preview.png)
+
+Type a title; the slug auto-derives below it
+(`My Sandwich Bread → my-sandwich-bread`). The slug is editable
+pre-save and becomes immutable after — slug-as-filename is the
+stable identity for cross-references.
+
 ## Architecture
 
 ```
-recipes/*.md  →  RecipeParser  →  SQLite cache  →  Web UI
-   (canonical)    (rules-first)     (FTS5 +          (Laravel + Alpine)
-                       ↓             see-also)
-                   IngredientLLMParser  →  ingredient_llm_cache
-                   (Phase 9, opt-in)        (hits permanent,
-                                              misses 30-day TTL)
+                                        Web UI (browse, search, cook)
+                                                ↑
+recipes/*.md  →  RecipeParser  →  SQLite cache (FTS5 + see-also)
+   (canonical)    (rules-first)            ↑
+       ↑               ↓                   │
+       │           IngredientLLMParser  →  ingredient_llm_cache
+       │           (Phase 9, opt-in)        (hits permanent,
+       │                                     misses 30-day TTL)
+       │
+       └──  Web editor  →  RecipeFileWriter  →  RecipeReindexer
+            (form/raw)     (atomic write)      (single-recipe DB update)
 ```
 
 - **Parser-first**: every recipe goes through `RecipeParser` first.
@@ -106,6 +132,13 @@ recipes/*.md  →  RecipeParser  →  SQLite cache  →  Web UI
   `ingredient_llm_cache`; misses tombstone for 30 days so future
   model improvements get picked up. The fallback is **indexer-only**
   — no live API calls during page rendering.
+- **Editor as another writer**: the web editor (v1.1) goes through
+  the same `RecipeFileWriter` (atomic rename, slug validation,
+  containment check) as a hypothetical CLI importer would. After a
+  save, `RecipeReindexer::reindexOne` surgically updates just that
+  recipe's DB slice — no full corpus rebuild. The `.md` file on
+  disk remains the source of truth; deleting `database.sqlite` and
+  running `make reindex` reproduces the entire DB from the markdown.
 - **Cache, not source**: `make reindex` truncates and rebuilds the
   whole SQLite database from the markdown. You can delete
   `database/database.sqlite` and lose nothing material.
@@ -143,16 +176,26 @@ LAN, replace `localhost` with the host's LAN IP (e.g.
 
 **Add a recipe:**
 
+Two paths. The web editor (v1.1) is easier for one-offs:
+
+1. Open `http://localhost:8000/recipes/new` in a browser.
+2. Type a title, pick a category, fill in ingredients + method.
+3. Click "Create recipe" — the file lands at
+   `recipes/<category>/<slug>.md` and the index updates.
+
+Or the terminal-first workflow that still works exactly as it did
+in v1.0:
+
 ```sh
 $EDITOR recipes/desserts/your-recipe.md
 make reindex
 ```
 
-See [docs/recipe-format.md](docs/recipe-format.md) for the
-markdown format. It's deliberately permissive — frontmatter
-fields are mostly optional, ingredient lines have many parseable
-forms, and unparsed lines just render italicized instead of
-breaking the page.
+The markdown file on disk is the source of truth either way —
+the editor is just another writer. See
+[docs/recipe-format.md](docs/recipe-format.md) for the markdown
+format and [docs/editing.md](docs/editing.md) for the web editor
+workflow.
 
 **Enable the LLM fallback (optional):**
 
@@ -210,7 +253,7 @@ See [docs/dev-workflow.md](docs/dev-workflow.md) for the full
 loop. Quick reference:
 
 ```sh
-make test       # full PHPUnit suite (329 tests)
+make test       # full PHPUnit suite (498 tests, ~10s)
 make parity     # PHP↔JS formatter parity check
 make reindex    # rebuild SQLite from recipes/
 make fresh      # nuke + reindex everything
@@ -219,11 +262,12 @@ make shell      # bash inside the container
 
 ## Future work
 
-Documented at [TODO.md](TODO.md). The big-ticket items waiting on
-a Phase 11 polish pass: a synonym table for ingredient
-deduplication, jump-to-step picker for long recipes, swipe
-gestures for mobile cooking mode, and a few prompt + cache
-refinements for the LLM fallback. Nothing blocking v1.
+Documented at [TODO.md](TODO.md). The big-ticket items past v1.1:
+a synonym table for ingredient deduplication, jump-to-step picker
+for long recipes, swipe gestures for mobile cooking mode, phone-
+specific first-draft data-entry UX in the editor, and a few prompt
++ cache refinements for the LLM fallback. Nothing blocking the
+day-to-day "look up a recipe and cook it" workflow.
 
 ## Credits
 

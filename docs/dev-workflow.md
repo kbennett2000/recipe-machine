@@ -30,7 +30,7 @@ Now open <http://localhost:8000>.
 make dev        # start the container in the background
 make rebuild    # rebuild the image (after Dockerfile / dep changes)
 make assets     # rebuild Vite CSS/JS bundle on the host
-make test       # full PHPUnit suite (329 tests)
+make test       # full PHPUnit suite (498 tests)
 make parity     # PHP↔JS formatter parity test only
 make reindex    # rebuild the SQLite cache from recipes/*.md
 make fresh      # migrate:fresh + reindex (drops all cached data)

@@ -4,6 +4,78 @@ Known issues and deferred work for recipe-machine. Items here are
 out of scope for the current phase but worth fixing before v1
 ships or in a Phase 11 polish pass.
 
+## Completed in v1.1 (Phase 11)
+
+The editor closed the "markdown-only edit workflow" gap from v1.0. A
+stranger landing on the repo can now create, edit, and delete recipes
+in the web UI without touching a terminal.
+
+- **Web editor** — `/recipes/<slug>/edit` with a form mode (live
+  preview, sortable rows, sub-groups, mode-toggle round-trip) and a
+  raw markdown mode with syntax cues. Both modes hit the same
+  server-side parse/serialize/preview endpoints (no JS twin of the
+  parser).
+- **Create flow** — `/recipes/new` with category required, title
+  required, and a live slug-derivation preview ("My Sandwich Bread →
+  `my-sandwich-bread`"). Slug becomes immutable after first save.
+- **Delete flow** — small rose-tinted "Delete recipe" link in the
+  editor footer with a confirmation dialog. Removes the file from
+  disk, removes the recipe from the index, redirects to the category
+  listing. Inbound cross-references go unresolved (history preserved).
+- **Convert-to-structured** — unparsed lines in the "Verify these"
+  section now POST to `/edit/parse-line` which tries rules → LLM
+  cache → fallback. Successful conversions get a ✨ "LLM cache" or
+  ⚠ "best-effort" badge so the user knows what to review before
+  saving.
+- **Concurrency awareness** — every 10s the editor polls
+  `/edit/mtime` and shows an amber banner if the file changed on disk
+  out-of-band ("$EDITOR in another window", `git pull`, etc).
+- **The previous "edit recipes in $EDITOR only" constraint from v1.0
+  is no longer the only path.** Both workflows still work, the
+  markdown file on disk is still the source of truth — the web
+  editor is just another writer that goes through the same
+  `RecipeFileWriter` → atomic-write → `RecipeReindexer` pipeline.
+- **Workflow follow-on** — `recipes/desserts/vanilla-ice-cream.md`
+  and `recipes/sauces/pasta-sauce.md` (the empty-method recipes from
+  v1.0) and the shrimp-po-boys sub-group cleanup are now 30-second
+  fixes via the editor's verify-these section instead of terminal
+  work. The content-side TODO entries below stay open (the recipes
+  haven't been fixed yet), but the path-to-fix has moved.
+
+A list of follow-on issues caught during the editor build:
+
+- [ ] "+ New category" inline affordance. Adding a recipe to a
+      category that doesn't have a directory yet currently requires
+      `mkdir recipes/<new-cat>/` in a terminal first. The category
+      dropdown only lists existing on-disk directories. A small
+      "+ new category" affordance in the dropdown that creates the
+      directory on submit would close this gap.
+- [ ] Phone-specific data-entry UX. The current mobile editor is
+      reference-editing quality (good for tweaking an existing
+      recipe), not first-draft quality. Long-press to drag works but
+      isn't discoverable; the soft keyboard covers most of the
+      ingredient table on portrait phones. A "tap-to-promote, then
+      reorder" UX would fit hands-busy mobile better.
+- [ ] Modal positioning on portrait phones with the soft keyboard up.
+      The delete confirmation dialog centers in the viewport, which
+      can sit awkwardly when the keyboard reduces visible height.
+      Not blocking — the user typically isn't typing when they hit
+      Delete — but worth a `padding-bottom: env(keyboard-inset-height)`
+      tweak when iOS Safari ships the property more widely.
+- [ ] Reindex as a queued job for larger corpora. Save → `reindexOne`
+      is synchronous (~50ms for one recipe today). At a few hundred
+      recipes this stays fine; at a few thousand the user would
+      notice the save round-trip. Move to a queue + flash-and-redirect
+      pattern when that becomes real.
+- [ ] Visual feedback for non-parsable amounts. The form's amount
+      field now accepts ¾, 1 ½, 1 1/2, etc. (Phase 11H.4), but
+      garbage like "abc" silently becomes null. A small inline hint
+      ("not a number") under the amount field on blur would help
+      a user spot a typo before they save.
+- [ ] Empty Vanilla Ice Cream + Pasta Sauce method sections (still
+      need content). Was a v1.0 deferral; now editable via the web
+      UI instead of terminal. See content-side cleanups below.
+
 ## Deferrals (Phase 11 polish targets)
 
 - [ ] Drop platform PHP 8.3 pin in composer.json (decided in Phase 0,
@@ -98,6 +170,8 @@ ships or in a Phase 11 polish pass.
       rewritten as `### Remoulade Sauce`, `### Fried Shrimp`,
       `### Po'Boy Assembly` headers. Mirrors the method-side cleanup
       done in Phase 2C. (navajo-tacos already uses this convention.)
+      As of v1.1 the editor's "Add group" flow + verify-these
+      cleanup makes this a UI fix instead of a terminal edit.
 - [ ] "baking soda bath" line in big-soft-pretzels resolves to
       baking soda (correctly) but loses the "bath" context, which
       matters for shopping-list aggregation. Either hand-edit the
