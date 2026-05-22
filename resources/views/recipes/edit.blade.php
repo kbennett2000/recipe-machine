@@ -163,5 +163,46 @@
             <a href="https://github.com/kbennett2000/recipe-machine/blob/main/docs/recipe-format.md" target="_blank" rel="noopener" class="text-amber-700 underline hover:text-amber-800 dark:text-amber-400">recipe-format.md</a>.
             Save triggers a single-recipe reindex.
         </aside>
+
+        {{-- Phase 11G: delete flow. The link sits below the save bar in
+             the page footer so it's not adjacent to the main action — a
+             distracted user can't fat-finger it. The actual destructive
+             POST sits behind a confirm dialog. --}}
+        <div x-data="{ showConfirmDialog: false }" class="mt-8 border-t border-stone-200 pt-4 dark:border-stone-800">
+            <button type="button" @click="showConfirmDialog = true"
+                    data-testid="delete-recipe-link"
+                    title="Removes file from disk"
+                    class="text-xs text-rose-600 hover:text-rose-800 underline decoration-rose-600/30 underline-offset-2 hover:decoration-rose-800 dark:text-rose-400 dark:hover:text-rose-300">
+                Delete recipe
+            </button>
+
+            <div x-show="showConfirmDialog" x-cloak
+                 @keydown.escape.window="showConfirmDialog = false"
+                 class="fixed inset-0 z-40 flex items-center justify-center px-4">
+                <div class="fixed inset-0 bg-stone-900/60 backdrop-blur-sm"
+                     @click="showConfirmDialog = false"></div>
+                <div data-testid="delete-confirm-dialog"
+                     class="relative z-50 w-full max-w-md rounded-lg border border-stone-200 bg-white p-6 shadow-xl dark:border-stone-700 dark:bg-stone-900">
+                    <h2 class="font-display text-lg font-semibold text-stone-900 dark:text-stone-100">Delete '{{ $recipe->title }}'?</h2>
+                    <p class="mt-2 text-sm text-stone-600 dark:text-stone-400">
+                        This removes the file from disk and cannot be undone except via git.
+                    </p>
+                    <div class="mt-5 flex items-center justify-end gap-3">
+                        <button type="button" @click="showConfirmDialog = false"
+                                class="rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-300 dark:hover:bg-stone-800">
+                            Cancel
+                        </button>
+                        <form method="POST" action="{{ route('recipes.destroy', ['recipe' => $recipe->slug]) }}">
+                            @csrf
+                            <button type="submit"
+                                    data-testid="delete-confirm-button"
+                                    class="rounded border border-rose-500 bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700 dark:border-rose-600 dark:bg-rose-700 dark:hover:bg-rose-600">
+                                Delete permanently
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 @endsection

@@ -16,6 +16,8 @@
 --}}
 @php
     /** @var list<string> $categories */
+    /** @var bool $isNew */
+    $isNew = $isNew ?? false;
     $unitOptions = [
         ['', '(none)'],
         ['tsp', 'tsp'], ['tbsp', 'Tbsp'], ['cup', 'cup'], ['floz', 'fl oz'],
@@ -34,31 +36,68 @@
     <h2 class="font-display text-lg font-semibold border-b border-stone-200 pb-1 dark:border-stone-800">Title &amp; category</h2>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label class="block">
-            <span class="text-xs font-medium text-stone-600 dark:text-stone-400">Title</span>
+            <span class="text-xs font-medium text-stone-600 dark:text-stone-400">
+                Title
+                @if ($isNew)<span class="text-rose-600 dark:text-rose-400">*</span>@endif
+            </span>
             <input type="text" x-model="state.frontmatter.title"
                    class="mt-1 block w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100">
         </label>
         <label class="block">
-            <span class="text-xs font-medium text-stone-600 dark:text-stone-400">Category</span>
+            <span class="text-xs font-medium text-stone-600 dark:text-stone-400">
+                Category
+                @if ($isNew)<span class="text-rose-600 dark:text-rose-400">*</span>@endif
+            </span>
             <select x-model="state.frontmatter.category"
                     class="mt-1 block w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100">
+                @if ($isNew)
+                    <option value="">— pick a category —</option>
+                @endif
                 @foreach ($categories as $cat)
                     <option value="{{ $cat }}">{{ $cat }}</option>
                 @endforeach
             </select>
-            <p class="mt-1 text-xs text-stone-500 dark:text-stone-600">Category moves aren't supported in the editor.</p>
+            @unless ($isNew)
+                <p class="mt-1 text-xs text-stone-500 dark:text-stone-600">Category moves aren't supported in the editor.</p>
+            @endunless
         </label>
-        <label class="block">
-            <span class="text-xs font-medium text-stone-600 dark:text-stone-400 flex items-center gap-2">
-                Slug
-                <span class="inline-flex items-center rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-stone-600 dark:bg-stone-800 dark:text-stone-400"
-                      title="Slug is derived from the filename. Rename via terminal if needed.">
-                    🔒 immutable
+        @if ($isNew)
+            {{-- Phase 11G: editable slug + live-derived preview. The slug
+                 auto-derives from title until the user manually edits the
+                 input, at which point `slugTouched` flips and the binding
+                 leaves the user's value alone. After first save, slug
+                 becomes immutable (the edit form's read-only branch). --}}
+            <label class="block">
+                <span class="text-xs font-medium text-stone-600 dark:text-stone-400">Slug</span>
+                <input type="text" x-model="state.frontmatter.slug"
+                       @input="slugTouched = true"
+                       placeholder="auto-derived from title"
+                       class="mt-1 block w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100">
+                <p class="mt-1 text-xs text-stone-500 dark:text-stone-600"
+                   data-testid="slug-preview">
+                    <span x-show="!slugTouched && (state.frontmatter.title || '').length > 0" x-cloak>
+                        → <span x-text="derivedSlug()" class="font-mono text-amber-700 dark:text-amber-400"></span>
+                    </span>
+                    <span x-show="slugTouched" x-cloak>
+                        Override active. <button type="button"
+                                                 @click="slugTouched = false; state.frontmatter.slug = derivedSlug()"
+                                                 class="text-amber-700 underline dark:text-amber-400">re-derive from title</button>
+                    </span>
+                </p>
+            </label>
+        @else
+            <label class="block">
+                <span class="text-xs font-medium text-stone-600 dark:text-stone-400 flex items-center gap-2">
+                    Slug
+                    <span class="inline-flex items-center rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-stone-600 dark:bg-stone-800 dark:text-stone-400"
+                          title="Slug is derived from the filename. Rename via terminal if needed.">
+                        🔒 immutable
+                    </span>
                 </span>
-            </span>
-            <input type="text" :value="state.frontmatter.slug" readonly disabled
-                   class="mt-1 block w-full rounded border border-stone-300 bg-stone-100 px-2 py-1.5 text-sm text-stone-500 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-500">
-        </label>
+                <input type="text" :value="state.frontmatter.slug" readonly disabled
+                       class="mt-1 block w-full rounded border border-stone-300 bg-stone-100 px-2 py-1.5 text-sm text-stone-500 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-500">
+            </label>
+        @endif
         <label class="block">
             <span class="text-xs font-medium text-stone-600 dark:text-stone-400">Servings</span>
             <input type="text" x-model="state.frontmatter.servings"

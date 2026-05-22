@@ -68,6 +68,11 @@
                        class="border-l border-stone-200 dark:border-stone-700 pl-4 text-stone-600 hover:text-amber-700 dark:text-stone-400 dark:hover:text-amber-400 transition">
                         Index
                     </a>
+                    <a href="{{ route('recipes.create') }}"
+                       data-testid="nav-new-recipe"
+                       class="text-stone-600 hover:text-amber-700 dark:text-stone-400 dark:hover:text-amber-400 transition">
+                        + New recipe
+                    </a>
                     <a href="{{ route('shopping-list') }}"
                        class="text-stone-700 hover:text-amber-700 dark:text-stone-300 dark:hover:text-amber-400 transition">
                         Shopping List

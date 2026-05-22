@@ -209,6 +209,37 @@ final class RecipeEditController extends Controller
     }
 
     /**
+     * Phase 11G — POST /recipes/{slug}/delete.
+     *
+     * Removes the .md file from disk, drops the recipe from the index,
+     * and redirects to the category listing the recipe lived in. Inbound
+     * cross-references become unresolved per RecipeReindexer::remove().
+     */
+    public function destroy(Recipe $recipe): RedirectResponse
+    {
+        $title = $recipe->title;
+        $category = $recipe->category;
+        $slug = $recipe->slug;
+
+        try {
+            $this->makeWriter()->delete($slug);
+        } catch (Throwable $e) {
+            return back()->withErrors(['save' => "Couldn't delete file: {$e->getMessage()}"]);
+        }
+
+        try {
+            $this->reindexer->remove($slug);
+        } catch (Throwable $e) {
+            return back()->withErrors(['save' =>
+                "File removed, but the search/cache update failed: {$e->getMessage()}. Run `php artisan recipes:reindex` to recover."]);
+        }
+
+        return redirect()
+            ->route('categories.show', ['category' => $category])
+            ->with('success', "Deleted '{$title}'.");
+    }
+
+    /**
      * Return the sorted list of categories available on disk —
      * subdirectories of recipes/ that contain at least one .md file.
      * Powers the category dropdown in form mode.

@@ -761,6 +761,11 @@ window.recipeEditor = function (config) {
         routes: config.routes,
         hasInitialState: config.hasInitialState,
 
+        // Phase 11G: new-recipe mode flips on slug auto-derivation and
+        // some title/category validation hooks. Defaults to false so
+        // existing /edit calls keep their previous behavior.
+        isNew: !! config.isNew,
+
         mode: config.initialMode,
         modeSwitching: false,
 
@@ -777,6 +782,11 @@ window.recipeEditor = function (config) {
         _initialStateJson: '',
         _dirtyTimer: null,
         dirty: false,
+
+        // Phase 11G: slug auto-derivation. Tracks whether the user has
+        // manually edited the slug input — once they have, we stop
+        // re-deriving from title on every keystroke.
+        slugTouched: false,
 
         init(initialState) {
             if (initialState) {
@@ -800,6 +810,11 @@ window.recipeEditor = function (config) {
             this.$el.addEventListener('input', () => {
                 this.schedulePreview();
                 this.scheduleDirtyCheck();
+                // Phase 11G: live slug derivation from title on the new
+                // form. Stops once the user has manually edited the slug.
+                if (this.isNew && ! this.slugTouched) {
+                    this.state.frontmatter.slug = this.derivedSlug();
+                }
             });
             this.$el.addEventListener('change', () => {
                 this.schedulePreview();
@@ -810,6 +825,23 @@ window.recipeEditor = function (config) {
             // (in form mode only; the lists exist in the DOM either way
             // because Alpine x-show keeps both subtrees rendered).
             this.$nextTick(() => this.initSortables());
+        },
+
+        /**
+         * Phase 11G — convert the current title into a kebab-case slug.
+         * Mirrors PHP's Str::slug roughly: lowercase, replace non-alnum
+         * runs with single hyphens, trim leading/trailing hyphens. Strip
+         * diacritics so "crème brûlée" → "creme-brulee".
+         */
+        derivedSlug() {
+            const title = (this.state.frontmatter.title || '').toString();
+            if (! title) return '';
+            return title
+                .normalize('NFD')
+                .replace(/[̀-ͯ]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '');
         },
 
         // Translate ParsedRecipe shape (snake_case from PHP) into the

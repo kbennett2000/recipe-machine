@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\RecipeController;
+use App\Http\Controllers\RecipeCreateController;
 use App\Http\Controllers\RecipeEditController;
 use App\Http\Controllers\RecipeIndexController;
 use App\Http\Controllers\SearchController;
@@ -14,12 +15,19 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', [HomeController::class, 'index'])->name('home');
 Route::get('/categories/{category}', [CategoryController::class, 'show'])->name('categories.show');
 Route::get('/recipes', [RecipeIndexController::class, 'show'])->name('recipes.index');
+// Phase 11G: create-new must come BEFORE the catch-all {recipe:slug} routes.
+Route::get('/recipes/new', [RecipeCreateController::class, 'create'])->name('recipes.create');
+Route::post('/recipes/new', [RecipeCreateController::class, 'store'])->name('recipes.store');
+Route::post('/recipes/new/parse', [RecipeCreateController::class, 'parse'])->name('recipes.create.parse');
+Route::post('/recipes/new/serialize', [RecipeCreateController::class, 'serialize'])->name('recipes.create.serialize');
+Route::post('/recipes/new/preview', [RecipeCreateController::class, 'preview'])->name('recipes.create.preview');
 Route::get('/recipes/{recipe:slug}', [RecipeController::class, 'show'])->name('recipes.show');
 Route::get('/recipes/{recipe:slug}/edit', [RecipeEditController::class, 'edit'])->name('recipes.edit');
 Route::post('/recipes/{recipe:slug}/edit', [RecipeEditController::class, 'update'])->name('recipes.update');
 Route::post('/recipes/{recipe:slug}/edit/parse', [RecipeEditController::class, 'parse'])->name('recipes.edit.parse');
 Route::post('/recipes/{recipe:slug}/edit/serialize', [RecipeEditController::class, 'serialize'])->name('recipes.edit.serialize');
 Route::post('/recipes/{recipe:slug}/edit/preview', [RecipeEditController::class, 'preview'])->name('recipes.edit.preview');
+Route::post('/recipes/{recipe:slug}/delete', [RecipeEditController::class, 'destroy'])->name('recipes.destroy');
 Route::get('/recipes/{recipe:slug}/cook', [RecipeController::class, 'cook'])->name('recipes.cook');
 Route::get('/search', [SearchController::class, 'index'])->name('search');
 

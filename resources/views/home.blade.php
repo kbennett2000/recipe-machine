@@ -13,7 +13,14 @@
     </section>
 
     <section class="mb-14">
-        <h2 class="font-display text-xl font-semibold mb-5 text-stone-900 dark:text-stone-100">Browse by category</h2>
+        <div class="mb-5 flex items-baseline justify-between">
+            <h2 class="font-display text-xl font-semibold text-stone-900 dark:text-stone-100">Browse by category</h2>
+            <a href="{{ route('recipes.create') }}"
+               data-testid="home-new-recipe"
+               class="inline-flex items-center rounded-lg border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50">
+                + New recipe
+            </a>
+        </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             @foreach ($categories as $cat)
                 @if ($cat['count'] > 0)
