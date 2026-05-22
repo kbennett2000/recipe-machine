@@ -251,14 +251,16 @@ final class RecipeEditTest extends IndexedCorpusTestCase
         $afterRedirect->assertSee('Save failed', escape: false);
     }
 
-    public function test_edit_form_has_markdown_editor_alpine_component(): void
+    public function test_edit_form_has_editor_alpine_component(): void
     {
+        // Phase 11E replaced the standalone markdownEditor() component
+        // with a unified recipeEditor() that wraps both form mode and
+        // raw mode. The textarea is still present (in raw mode) but is
+        // referenced via x-ref="rawTextarea" so the Alpine component
+        // can poke at it during mode switches.
         $response = $this->get('/recipes/'.self::TEST_SLUG.'/edit');
-        $response->assertSee('x-data="markdownEditor()"', escape: false);
-        // The textarea-overlay trick requires the shadow <pre> alongside
-        // the textarea.
-        $response->assertSee('x-ref="shadow"', escape: false);
-        $response->assertSee('x-ref="textarea"', escape: false);
+        $response->assertSee('recipeEditor(', escape: false);
+        $response->assertSee('x-ref="rawTextarea"', escape: false);
     }
 
     public function test_edit_form_has_keydown_handler_for_tab_and_esc(): void

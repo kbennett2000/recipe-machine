@@ -1,10 +1,12 @@
 import './bootstrap';
 
 import Alpine from 'alpinejs';
+import Sortable from 'sortablejs';
 import { formatIngredient } from './ingredient-format.js';
 
 window.Alpine = Alpine;
 window.formatIngredient = formatIngredient;
+window.Sortable = Sortable;
 
 // ============================================================================
 // Shopping-list state — Alpine store, used across the recipe page (Add button),
@@ -736,5 +738,407 @@ function applyInline(escapedLine, refClass) {
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     return out;
 }
+
+// ============================================================================
+// Phase 11E — form-mode recipe editor.
+//
+// The Alpine `recipeEditor` factory backs /recipes/{slug}/edit. Holds the
+// recipe's state in a JS object that mirrors ParsedRecipe.toArray():
+//   state.frontmatter.{title, category, slug, ...}
+//   state.ingredients[]   — each row has _key (sortable identity),
+//                            raw, parsed, amount, unit, ingredient, etc.
+//   state.method[]        — each step has _key + text
+//   state.notes / state.libation_prose / state.cross_references
+//
+// All state transformations (parse, serialize, preview) hit server-side
+// endpoints — no JS twin of RecipeSerializer. The Phase 11E ADR is in
+// the controller's docblock.
+// ============================================================================
+
+window.recipeEditor = function (config) {
+    return {
+        slug: config.slug,
+        routes: config.routes,
+        hasInitialState: config.hasInitialState,
+
+        mode: config.initialMode,
+        modeSwitching: false,
+
+        // Reactive backing store. Initialized in init().
+        state: { frontmatter: {}, ingredients: [], method: [], notes: '', libation_prose: '', cross_references: [] },
+
+        previewLoading: false,
+        _previewTimer: null,
+        _keyCounter: 0,
+
+        init(initialState) {
+            if (initialState) {
+                this.state = this.hydrate(initialState);
+            }
+            // Always run a preview on first render so the pane isn't blank.
+            this.$nextTick(() => this.schedulePreview());
+            // Watch state changes (deep) — refresh the preview when anything
+            // moves. Alpine 3's $watch isn't deep, so we lean on the form's
+            // x-on:input/change/x-model bindings to trigger via the
+            // schedulePreview() calls we sprinkle into mutator methods.
+            // For broad coverage we also schedule on any 'input' event in
+            // the form subtree.
+            this.$el.addEventListener('input', () => this.schedulePreview());
+            this.$el.addEventListener('change', () => this.schedulePreview());
+
+            // Wire up SortableJS for the ingredient and method lists
+            // (in form mode only; the lists exist in the DOM either way
+            // because Alpine x-show keeps both subtrees rendered).
+            this.$nextTick(() => this.initSortables());
+        },
+
+        // Translate ParsedRecipe shape (snake_case from PHP) into the
+        // reactive store. Adds a _key to each ingredient/method row so
+        // x-for diffing + drag reorder identifies items by stable id.
+        hydrate(parsed) {
+            const fm = parsed.frontmatter || {};
+            return {
+                frontmatter: {
+                    title: fm.title || '',
+                    category: fm.category || '',
+                    slug: fm.slug || '',
+                    servings: fm.servings || null,
+                    yields: fm.yields ?? null,
+                    prep_time: fm.prep_time || null,
+                    cook_time: fm.cook_time || null,
+                    total_time: fm.total_time || null,
+                    oven_temp: fm.oven_temp || null,
+                    difficulty: fm.difficulty || null,
+                    tags: Array.isArray(fm.tags) ? fm.tags.slice() : null,
+                    libation: fm.libation || null,
+                    source: fm.source || null,
+                    references: Array.isArray(fm.references) ? fm.references.slice() : null,
+                    extra: { ...(fm.extra || {}) },
+                },
+                ingredients: (parsed.ingredients || []).map((i) => ({
+                    _key: ++this._keyCounter,
+                    raw: i.raw || '',
+                    parsed: !!i.parsed,
+                    amount: i.amount ?? null,
+                    amount_high: i.amount_high ?? null,
+                    unit: i.unit || '',
+                    ingredient: i.ingredient || '',
+                    modifier: i.modifier || '',
+                    note: i.note || '',
+                    optional: !!i.optional,
+                    group: i.group || null,
+                })),
+                method: (parsed.method || []).map((s) => ({
+                    _key: ++this._keyCounter,
+                    text: s || '',
+                })),
+                notes: parsed.notes || '',
+                libation_prose: parsed.libation_prose || '',
+                cross_references: parsed.cross_references || [],
+            };
+        },
+
+        // Translate reactive store back to ParsedRecipe-shaped JSON for
+        // POST to /edit/serialize, /edit/preview, or the main save path.
+        dehydrate() {
+            return {
+                frontmatter: { ...this.state.frontmatter },
+                ingredients: this.state.ingredients.map((i) => ({
+                    raw: i.raw,
+                    parsed: i.parsed,
+                    amount: i.parsed && i.amount !== '' && i.amount !== null ? i.amount : null,
+                    amount_high: i.amount_high,
+                    unit: i.unit || null,
+                    ingredient: i.ingredient || null,
+                    modifier: i.modifier || null,
+                    note: i.note || null,
+                    optional: i.optional,
+                    group: i.group || null,
+                })),
+                method: this.state.method.map((s) => s.text).filter((s) => s !== ''),
+                notes: this.state.notes || null,
+                libation_prose: this.state.libation_prose || null,
+                cross_references: this.state.cross_references || [],
+            };
+        },
+
+        // ---- Sortable wiring ----
+
+        initSortables() {
+            if (this.$refs.ingredientsList) {
+                new Sortable(this.$refs.ingredientsList, {
+                    handle: '.drag-handle',
+                    animation: 150,
+                    onEnd: (ev) => this.reorderIngredients(ev),
+                });
+            }
+            if (this.$refs.methodList) {
+                new Sortable(this.$refs.methodList, {
+                    handle: '.drag-handle',
+                    animation: 150,
+                    onEnd: (ev) => this.reorderMethod(ev),
+                });
+            }
+        },
+
+        reorderIngredients(ev) {
+            // The DOM rearranged itself; sync state.ingredients to match.
+            // We only sort the parsed-subset list (unparsed rows live in
+            // a separate section), so reorder within parsed in place.
+            const list = this.$refs.ingredientsList;
+            const orderedKeys = Array.from(list.querySelectorAll('[data-key]'))
+                .map((el) => Number(el.dataset.key));
+            const byKey = new Map(this.state.ingredients.map((i) => [i._key, i]));
+            const parsedReordered = orderedKeys.map((k) => byKey.get(k)).filter(Boolean);
+            const unparsed = this.state.ingredients.filter((i) => ! i.parsed);
+            this.state.ingredients = [...parsedReordered, ...unparsed];
+            this.schedulePreview();
+        },
+
+        reorderMethod(ev) {
+            const list = this.$refs.methodList;
+            const orderedKeys = Array.from(list.querySelectorAll('[data-key]'))
+                .map((el) => Number(el.dataset.key));
+            const byKey = new Map(this.state.method.map((s) => [s._key, s]));
+            this.state.method = orderedKeys.map((k) => byKey.get(k)).filter(Boolean);
+            this.schedulePreview();
+        },
+
+        // ---- Ingredient operations ----
+
+        addIngredient() {
+            this.state.ingredients.push({
+                _key: ++this._keyCounter,
+                raw: '',
+                parsed: true,
+                amount: null,
+                amount_high: null,
+                unit: '',
+                ingredient: '',
+                modifier: '',
+                note: '',
+                optional: false,
+                group: null,
+            });
+            this.schedulePreview();
+        },
+
+        removeIngredient(key) {
+            this.state.ingredients = this.state.ingredients.filter((i) => i._key !== key);
+            this.schedulePreview();
+        },
+
+        convertToStructured(key) {
+            const row = this.state.ingredients.find((i) => i._key === key);
+            if (! row) return;
+            row.parsed = true;
+            // Best-effort guess from raw: leave amount/unit empty, fill ingredient.
+            row.ingredient = row.raw;
+            row.raw = '';
+            this.schedulePreview();
+        },
+
+        unparsedIngredients() {
+            return this.state.ingredients.filter((i) => ! i.parsed);
+        },
+
+        // ---- Sub-group operations ----
+
+        groupNames() {
+            const seen = new Set();
+            for (const i of this.state.ingredients) {
+                if (i.group) seen.add(i.group);
+            }
+            return Array.from(seen);
+        },
+
+        addGroup() {
+            const name = prompt('Group name?');
+            if (! name) return;
+            // The group "exists" the moment any ingredient is tagged with it.
+            // Add an empty new ingredient row pre-tagged so the group has
+            // something to show.
+            this.state.ingredients.push({
+                _key: ++this._keyCounter,
+                raw: '',
+                parsed: true,
+                amount: null,
+                amount_high: null,
+                unit: '',
+                ingredient: '',
+                modifier: '',
+                note: '',
+                optional: false,
+                group: name,
+            });
+            this.schedulePreview();
+        },
+
+        renameGroup(oldName, newName) {
+            if (! newName) return;
+            for (const i of this.state.ingredients) {
+                if (i.group === oldName) i.group = newName;
+            }
+            this.schedulePreview();
+        },
+
+        deleteGroup(name) {
+            for (const i of this.state.ingredients) {
+                if (i.group === name) i.group = null;
+            }
+            this.schedulePreview();
+        },
+
+        // ---- Method operations ----
+
+        addStep() {
+            this.state.method.push({ _key: ++this._keyCounter, text: '' });
+            this.schedulePreview();
+        },
+
+        removeStep(key) {
+            this.state.method = this.state.method.filter((s) => s._key !== key);
+            this.schedulePreview();
+        },
+
+        autoResize(el) {
+            el.style.height = 'auto';
+            el.style.height = (el.scrollHeight) + 'px';
+        },
+
+        // ---- Frontmatter extras ----
+
+        addExtra() {
+            const key = prompt('Field name (e.g. "weight_grams")?');
+            if (! key) return;
+            this.state.frontmatter.extra = { ...this.state.frontmatter.extra, [key]: '' };
+        },
+
+        removeExtra(key) {
+            const copy = { ...this.state.frontmatter.extra };
+            delete copy[key];
+            this.state.frontmatter.extra = copy;
+            this.schedulePreview();
+        },
+
+        renameExtra(oldKey, newKey) {
+            if (! newKey || newKey === oldKey) return;
+            const copy = { ...this.state.frontmatter.extra };
+            copy[newKey] = copy[oldKey];
+            delete copy[oldKey];
+            this.state.frontmatter.extra = copy;
+            this.schedulePreview();
+        },
+
+        // ---- Mode toggling ----
+
+        async switchMode(target) {
+            if (target === this.mode) return;
+            this.modeSwitching = true;
+            try {
+                if (target === 'raw') {
+                    // Form → Raw: serialize state to markdown server-side
+                    // and populate the textarea.
+                    const r = await this.postJson(this.routes.serialize, { state: JSON.stringify(this.dehydrate()) });
+                    if (r && r.markdown !== undefined) {
+                        this.$refs.rawTextarea.value = r.markdown;
+                    }
+                } else {
+                    // Raw → Form: parse the textarea content server-side
+                    // and re-hydrate.
+                    const md = this.$refs.rawTextarea.value;
+                    const r = await this.postJson(this.routes.parse, { markdown: md });
+                    if (r && ! r.error) {
+                        this.state = this.hydrate(r);
+                        this.$nextTick(() => this.initSortables());
+                    } else if (r && r.error) {
+                        alert('Cannot switch to form mode — the markdown didn\'t parse:\n' + r.error);
+                        return;
+                    }
+                }
+                this.mode = target;
+            } finally {
+                this.modeSwitching = false;
+            }
+        },
+
+        onRawInput() {
+            this.schedulePreview();
+        },
+
+        onKeydown(ev) {
+            if (ev.key === 'Escape') {
+                ev.preventDefault();
+                ev.target.blur();
+                return;
+            }
+            if (ev.key !== 'Tab') return;
+            ev.preventDefault();
+            const ta = ev.target;
+            const start = ta.selectionStart;
+            const value = ta.value;
+            ta.value = value.substring(0, start) + '  ' + value.substring(ta.selectionEnd);
+            ta.selectionStart = ta.selectionEnd = start + 2;
+        },
+
+        // ---- Preview ----
+
+        schedulePreview() {
+            if (this._previewTimer) clearTimeout(this._previewTimer);
+            this._previewTimer = setTimeout(() => this.refreshPreview(), 300);
+        },
+
+        async refreshPreview() {
+            this.previewLoading = true;
+            try {
+                const body = this.mode === 'form'
+                    ? { state: JSON.stringify(this.dehydrate()) }
+                    : { markdown: this.$refs.rawTextarea?.value ?? '' };
+                const r = await this.postJson(this.routes.preview, body);
+                if (r && r.html !== undefined) {
+                    this.$refs.previewPane.innerHTML = r.html;
+                } else if (r && r.error) {
+                    this.$refs.previewPane.innerHTML =
+                        '<p class="text-sm text-rose-700 dark:text-rose-400 italic">Preview error: ' + r.error + '</p>';
+                }
+            } finally {
+                this.previewLoading = false;
+            }
+        },
+
+        // ---- Submit ----
+
+        onSubmit(ev) {
+            // In form mode we serialize state into the hidden `state` field
+            // BEFORE the form submits. The controller's update() branches
+            // on `state` vs `markdown`.
+            if (this.mode === 'form') {
+                this.$refs.stateField.value = JSON.stringify(this.dehydrate());
+            } else {
+                // Raw mode: clear `state` so the controller takes the
+                // textarea contents.
+                this.$refs.stateField.value = '';
+            }
+        },
+
+        // ---- Plumbing ----
+
+        async postJson(url, body) {
+            const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+            const fd = new FormData();
+            for (const [k, v] of Object.entries(body)) fd.append(k, v);
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': csrf || '', 'Accept': 'application/json' },
+                body: fd,
+            });
+            try {
+                return await resp.json();
+            } catch {
+                return { error: 'Server returned non-JSON response' };
+            }
+        },
+    };
+};
 
 Alpine.start();

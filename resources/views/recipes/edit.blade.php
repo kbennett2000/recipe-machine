@@ -15,73 +15,119 @@
         <span>Edit</span>
     </nav>
 
-    <header class="mb-6 border-b border-stone-200 pb-4 dark:border-stone-800">
+    <header class="mb-4 border-b border-stone-200 pb-4 dark:border-stone-800">
         <h1 class="font-display text-3xl font-semibold tracking-tight">Editing: {{ $recipe->title }}</h1>
         <p class="mt-1 text-sm text-stone-500 dark:text-stone-500">
-            Editing the raw markdown source. File:
-            <code class="rounded bg-stone-100 px-1 py-0.5 text-xs dark:bg-stone-800">{{ $recipe->source_path }}</code>
+            File: <code class="rounded bg-stone-100 px-1 py-0.5 text-xs dark:bg-stone-800">{{ $recipe->source_path }}</code>
         </p>
     </header>
 
-    {{-- Phase 11D.1: sticky error banner. Stays pinned to the top while the
-         user scrolls through a long recipe so the failure reason is always
-         visible. Only applied to this page; the global flash banner on
-         /recipes/{slug} keeps its regular layout flow. --}}
     @if ($errors->has('save'))
-        <div class="sticky top-0 z-20 mb-4 rounded border border-rose-300 bg-rose-50 px-4 py-3 text-rose-900 shadow-md dark:border-rose-700 dark:bg-rose-950/90 dark:text-rose-200">
+        <div class="sticky top-0 z-30 mb-4 rounded border border-rose-300 bg-rose-50 px-4 py-3 text-rose-900 shadow-md dark:border-rose-700 dark:bg-rose-950/90 dark:text-rose-200">
             <p class="font-medium">Save failed</p>
             <p class="mt-1 text-sm">{{ $errors->first('save') }}</p>
         </div>
     @endif
 
-    <form method="POST" action="{{ route('recipes.update', ['recipe' => $recipe->slug]) }}">
-        @csrf
-        <label for="markdown" class="sr-only">Recipe markdown</label>
+    @php
+        $stateAttr = $initialState !== null ? htmlspecialchars(json_encode($initialState, JSON_UNESCAPED_UNICODE), ENT_QUOTES) : '';
+        $canFormMode = $initialState !== null;
+    @endphp
 
-        {{-- Phase 11D.1: textarea-overlay syntax cues.
-             A `<pre>` is positioned absolutely behind a transparent-text
-             textarea. Both elements share font, padding, and line-height
-             so the highlighted "shadow" lines up exactly with the user's
-             input. Alpine writes the shadow's innerHTML on every keystroke;
-             the textarea remains the source of truth.
+    <div x-data="recipeEditor({
+                slug: '{{ $recipe->slug }}',
+                initialMode: '{{ $canFormMode ? ($errors->has('save') ? 'raw' : 'form') : 'raw' }}',
+                hasInitialState: {{ $canFormMode ? 'true' : 'false' }},
+                routes: {
+                    parse: '{{ route('recipes.edit.parse', ['recipe' => $recipe->slug]) }}',
+                    serialize: '{{ route('recipes.edit.serialize', ['recipe' => $recipe->slug]) }}',
+                    preview: '{{ route('recipes.edit.preview', ['recipe' => $recipe->slug]) }}',
+                },
+            })"
+            x-init="init(@js($initialState))"
+            data-initial-state="{{ $stateAttr }}"
+            data-initial-markdown="{{ old('markdown', $markdown) }}"
+            class="space-y-4">
 
-             If the overlay ever drifts (a font issue, a tab-size
-             mismatch), the worst case is "no color cue" — the textarea
-             stays fully usable since it owns the actual text. --}}
-        <div class="relative w-full max-w-[900px]" x-data="markdownEditor()" x-init="init()">
-            <pre x-ref="shadow"
-                 aria-hidden="true"
-                 class="pointer-events-none absolute inset-0 m-0 rounded border border-transparent px-4 py-3 text-sm leading-relaxed text-stone-700 dark:text-stone-300 overflow-hidden whitespace-pre-wrap break-words"
-                 style="font-family: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace; tab-size: 2;"></pre>
-            <textarea id="markdown" name="markdown" rows="40"
-                      x-ref="textarea"
-                      spellcheck="false" autocomplete="off"
-                      x-on:input="render()"
-                      x-on:scroll="syncScroll()"
-                      x-on:keydown="onKeydown($event)"
-                      class="relative w-full rounded border border-stone-300 bg-white/0 px-4 py-3 text-sm leading-relaxed shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/30 dark:border-stone-700 dark:bg-stone-900/0 dark:text-stone-100"
-                      style="font-family: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace; tab-size: 2; caret-color: rgb(217 119 6); color: transparent; -webkit-text-fill-color: transparent;">{{ old('markdown', $markdown) }}</textarea>
+        {{-- Mode toggle --}}
+        <div class="flex items-center gap-2">
+            <span class="text-sm text-stone-500 dark:text-stone-500">Mode:</span>
+            <div class="inline-flex rounded-md border border-stone-300 bg-white p-0.5 dark:border-stone-700 dark:bg-stone-900">
+                <button type="button" @click="switchMode('form')"
+                        :disabled="!hasInitialState && mode === 'raw'"
+                        :class="mode === 'form' ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' : 'text-stone-600 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100'"
+                        class="rounded px-3 py-1 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    Form
+                </button>
+                <button type="button" @click="switchMode('raw')"
+                        :class="mode === 'raw' ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' : 'text-stone-600 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100'"
+                        class="rounded px-3 py-1 text-sm font-medium transition">
+                    Raw
+                </button>
+            </div>
+            <span x-show="modeSwitching" x-cloak class="text-xs text-stone-400 dark:text-stone-600">switching…</span>
         </div>
 
-        <div class="mt-4 flex items-center gap-4">
-            <button type="submit"
-                    class="inline-flex items-center rounded-lg border border-amber-400 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50">
-                Save changes
-            </button>
-            <a href="{{ route('recipes.show', ['recipe' => $recipe->slug]) }}"
-               class="text-sm text-stone-600 hover:text-amber-700 dark:text-stone-400 dark:hover:text-amber-400">
-                ← Back to recipe
-            </a>
-        </div>
-    </form>
+        <form id="edit-form" method="POST" action="{{ route('recipes.update', ['recipe' => $recipe->slug]) }}"
+              @submit="onSubmit($event)">
+            @csrf
+            {{-- Hidden state field — populated on submit when in form mode --}}
+            <input type="hidden" name="state" x-ref="stateField">
 
-    <aside class="mt-10 max-w-[900px] rounded-lg border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">
-        <h2 class="font-display font-semibold text-base mb-2 text-stone-900 dark:text-stone-100">Tips</h2>
-        <ul class="space-y-1 list-disc list-outside ml-5">
-            <li>Editing the <code class="text-xs">slug</code> or <code class="text-xs">category</code> isn't supported here — that's coming in a later phase.</li>
-            <li>Markdown reference: <a href="https://github.com/kbennett2000/recipe-machine/blob/main/docs/recipe-format.md" target="_blank" rel="noopener noreferrer" class="text-amber-700 underline hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300">recipe-format.md</a>.</li>
-            <li>Saving triggers a single-recipe reindex; large recipes may take a moment.</li>
-            <li><kbd class="rounded border border-stone-300 bg-white px-1 text-xs dark:border-stone-700 dark:bg-stone-800">Tab</kbd> indents; <kbd class="rounded border border-stone-300 bg-white px-1 text-xs dark:border-stone-700 dark:bg-stone-800">Shift+Tab</kbd> unindents; <kbd class="rounded border border-stone-300 bg-white px-1 text-xs dark:border-stone-700 dark:bg-stone-800">Esc</kbd> exits the textarea.</li>
-        </ul>
-    </aside>
+            <div class="grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-6">
+                {{-- Editor column --}}
+                <div class="space-y-4 min-w-0">
+                    {{-- Form mode --}}
+                    <div x-show="mode === 'form'" x-cloak class="space-y-6">
+                        @include('recipes._edit_form')
+                    </div>
+
+                    {{-- Raw mode --}}
+                    <div x-show="mode === 'raw'" x-cloak class="space-y-2">
+                        <label for="markdown" class="sr-only">Recipe markdown</label>
+                        <textarea id="markdown" name="markdown" rows="40"
+                                  x-ref="rawTextarea"
+                                  spellcheck="false" autocomplete="off"
+                                  x-on:input="onRawInput()"
+                                  x-on:keydown="onKeydown($event)"
+                                  class="w-full rounded border border-stone-300 bg-white px-4 py-3 text-sm leading-relaxed shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/30 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+                                  style="font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace; tab-size: 2;">{{ old('markdown', $markdown) }}</textarea>
+                    </div>
+                </div>
+
+                {{-- Preview column --}}
+                <aside class="min-w-0">
+                    <div class="lg:sticky lg:top-4">
+                        <div class="mb-2 flex items-center justify-between text-sm">
+                            <span class="font-medium text-stone-600 dark:text-stone-400">Live preview</span>
+                            <span x-show="previewLoading" x-cloak class="text-xs text-stone-400 dark:text-stone-600">updating…</span>
+                        </div>
+                        <div class="rounded border border-stone-200 bg-white p-4 dark:border-stone-800 dark:bg-stone-900 max-h-[80vh] overflow-y-auto"
+                             x-ref="previewPane">
+                            <p class="text-sm italic text-stone-400 dark:text-stone-600">Loading preview…</p>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+
+            {{-- Save button (always visible at bottom) --}}
+            <div class="mt-6 flex items-center gap-4">
+                <button type="submit"
+                        class="inline-flex items-center rounded-lg border border-amber-400 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50">
+                    Save changes
+                </button>
+                <a href="{{ route('recipes.show', ['recipe' => $recipe->slug]) }}"
+                   class="text-sm text-stone-600 hover:text-amber-700 dark:text-stone-400 dark:hover:text-amber-400">
+                    ← Back to recipe
+                </a>
+            </div>
+        </form>
+
+        <aside class="rounded-lg border border-stone-200 bg-stone-50 p-3 text-xs text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-400">
+            <span class="font-semibold">Tips:</span>
+            Slug and category are read-only here. Markdown reference:
+            <a href="https://github.com/kbennett2000/recipe-machine/blob/main/docs/recipe-format.md" target="_blank" rel="noopener" class="text-amber-700 underline hover:text-amber-800 dark:text-amber-400">recipe-format.md</a>.
+            Save triggers a single-recipe reindex.
+        </aside>
+    </div>
 @endsection

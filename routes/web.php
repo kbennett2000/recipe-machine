@@ -17,6 +17,9 @@ Route::get('/recipes', [RecipeIndexController::class, 'show'])->name('recipes.in
 Route::get('/recipes/{recipe:slug}', [RecipeController::class, 'show'])->name('recipes.show');
 Route::get('/recipes/{recipe:slug}/edit', [RecipeEditController::class, 'edit'])->name('recipes.edit');
 Route::post('/recipes/{recipe:slug}/edit', [RecipeEditController::class, 'update'])->name('recipes.update');
+Route::post('/recipes/{recipe:slug}/edit/parse', [RecipeEditController::class, 'parse'])->name('recipes.edit.parse');
+Route::post('/recipes/{recipe:slug}/edit/serialize', [RecipeEditController::class, 'serialize'])->name('recipes.edit.serialize');
+Route::post('/recipes/{recipe:slug}/edit/preview', [RecipeEditController::class, 'preview'])->name('recipes.edit.preview');
 Route::get('/recipes/{recipe:slug}/cook', [RecipeController::class, 'cook'])->name('recipes.cook');
 Route::get('/search', [SearchController::class, 'index'])->name('search');
 
