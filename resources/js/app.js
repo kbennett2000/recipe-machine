@@ -1239,6 +1239,15 @@ window.recipeEditor = function (config) {
                     const r = await this.postJson(this.routes.serialize, { state: JSON.stringify(this.dehydrate()) });
                     if (r && r.markdown !== undefined) {
                         this.$refs.rawTextarea.value = r.markdown;
+                        // Phase 11H.2: the raw mode textarea text is rendered
+                        // transparent; the visible characters come from the
+                        // `<pre>` shadow behind it. Setting .value alone
+                        // doesn't trigger the input event that repaints the
+                        // shadow, so until the user types, they see the OLD
+                        // shadow content (the original scaffold). Force a
+                        // repaint here so the serialized state shows up
+                        // immediately.
+                        this.renderRawShadow();
                     }
                 } else {
                     // Raw → Form: parse the textarea content server-side
