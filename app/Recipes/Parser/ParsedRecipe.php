@@ -110,8 +110,16 @@ final class ParsedRecipe
         if (is_int($v) || is_float($v)) {
             return (float) $v;
         }
-        if (is_string($v) && is_numeric($v)) {
-            return (float) $v;
+        if (is_string($v)) {
+            if (is_numeric($v)) {
+                return (float) $v;
+            }
+            // Phase 11H.4: the form-mode amount input is a free-text field,
+            // so users type "¾", "1 ½", "1 1/2", or "1/4". Route those
+            // through the markdown parser's amount tokenizer so the form
+            // accepts the same shapes the canonical parser does.
+            $parsed = self::ingredientParser()->parseAmountToken($v);
+            return $parsed;
         }
         return null;
     }
@@ -124,7 +132,27 @@ final class ParsedRecipe
         if (is_numeric($v)) {
             return (float) $v;
         }
+        if (is_string($v)) {
+            // Same fraction-tolerant path as asNullableNumber, just for
+            // amount_high (the "up to N" upper bound).
+            return self::ingredientParser()->parseAmountToken($v);
+        }
         return null;
+    }
+
+    /**
+     * Lazily-instantiated parser used by the form-mode amount coercion
+     * paths above. fromArray is called once per request (in the editor's
+     * save/preview/serialize endpoints), so a single shared instance is
+     * fine and avoids re-constructing the UnitMatcher every call.
+     */
+    private static function ingredientParser(): IngredientParser
+    {
+        static $parser = null;
+        if ($parser === null) {
+            $parser = new IngredientParser;
+        }
+        return $parser;
     }
 
     /** @return array<string>|null */

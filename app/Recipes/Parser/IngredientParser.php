@@ -352,7 +352,14 @@ final class IngredientParser
         ]);
     }
 
-    private function parseAmountToken(string $token): ?float
+    /**
+     * Public so the form-mode editor (via ParsedRecipe::fromArray) can
+     * accept the same amount shapes the markdown parser already handles —
+     * unicode fractions ("¾"), mixed numbers ("1 ½", "1 1/2"), and plain
+     * decimals. Without this, the form silently dropped any amount that
+     * wasn't PHP-numeric.
+     */
+    public function parseAmountToken(string $token): ?float
     {
         $token = trim($token);
 

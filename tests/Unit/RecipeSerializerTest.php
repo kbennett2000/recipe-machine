@@ -249,6 +249,53 @@ final class RecipeSerializerTest extends TestCase
     }
 
     /**
+     * Phase 11H.4 regression — the form-mode amount input is a free-text
+     * field, so users typing "¾", "1 ½", or "1 1/2" used to have their
+     * amounts silently dropped by ParsedRecipe::fromArray (which only
+     * accepted PHP-numeric strings). The fix routes those shapes through
+     * the markdown parser's tokenizer. End-to-end form-state submission
+     * with each shape must round-trip with the amount preserved.
+     *
+     * @dataProvider amountShapesProvider
+     */
+    public function test_form_mode_state_accepts_fraction_amount_shapes(mixed $rawAmount, ?float $expected): void
+    {
+        $stateArray = [
+            'frontmatter' => ['title' => 'Frac', 'category' => 'desserts'],
+            'ingredients' => [[
+                'raw' => '',
+                'parsed' => true,
+                'amount' => $rawAmount,
+                'unit' => 'cup',
+                'ingredient' => 'butter',
+                'modifier' => 'softened',
+                'optional' => false,
+            ]],
+            'method' => ['Mix.'],
+        ];
+        $parsed = ParsedRecipe::fromArray($stateArray);
+        $this->assertCount(1, $parsed->ingredients);
+        $this->assertSame($expected, $parsed->ingredients[0]->amount);
+    }
+
+    public static function amountShapesProvider(): array
+    {
+        return [
+            'unicode three-quarters'  => ['¾', 0.75],
+            'unicode half'            => ['½', 0.5],
+            'mixed number unicode'    => ['1 ½', 1.5],
+            'mixed number ascii'      => ['1 1/2', 1.5],
+            'ascii fraction'          => ['1/4', 0.25],
+            'plain integer'           => ['3', 3.0],
+            'plain decimal'           => ['1.5', 1.5],
+            'integer literal'         => [3, 3.0],
+            'float literal'           => [0.75, 0.75],
+            'gibberish stays null'    => ['banana', null],
+            'empty string stays null' => ['', null],
+        ];
+    }
+
+    /**
      * Phase 11H.1 regression — when every frontmatter field is empty
      * (the /recipes/new flow before the user has typed anything), the
      * serializer used to emit `---\n{  }---\n\n## Ingredients\n` because
