@@ -284,4 +284,37 @@ final class RecipeCreateTest extends IndexedCorpusTestCase
         $response = $this->get('/');
         $response->assertSee('data-testid="home-new-recipe"', escape: false);
     }
+
+    /**
+     * Phase 11H.1 — the empty Form → Raw → Form round-trip used to crash
+     * with "Cannot switch to form mode — the markdown didn't parse" because
+     * the serializer emitted `---\n{  }---\n` for an empty frontmatter.
+     * The endpoint-level guarantee here is that serialize on an empty state
+     * produces structurally valid markdown that the parser can read back
+     * without choking on glued delimiters.
+     */
+    public function test_serialize_endpoint_does_not_glue_closing_delimiter_for_empty_state(): void
+    {
+        $emptyState = json_encode([
+            'frontmatter' => [
+                'title' => '',
+                'category' => '',
+                'slug' => null,
+                'extra' => [],
+            ],
+            'ingredients' => [],
+            'method' => [],
+            'notes' => null,
+            'libation_prose' => null,
+            'cross_references' => [],
+        ]);
+
+        $response = $this->postJson('/recipes/new/serialize', ['state' => $emptyState]);
+        $response->assertStatus(200);
+        $markdown = (string) $response->json('markdown');
+
+        $this->assertStringNotContainsString('{  }---', $markdown);
+        $this->assertStringNotContainsString("{  }\n---", $markdown);
+        $this->assertStringStartsWith("---\n", $markdown);
+    }
 }

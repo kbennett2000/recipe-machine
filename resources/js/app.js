@@ -1211,6 +1211,28 @@ window.recipeEditor = function (config) {
             if (target === this.mode) return;
             this.modeSwitching = true;
             try {
+                // Phase 11H.1: on the /recipes/new flow, when the form is
+                // still effectively empty (no title typed yet) we have
+                // nothing to serialize and nothing to round-trip. Skip
+                // the server calls entirely so the textarea retains its
+                // scaffold and the empty form state is preserved. This
+                // avoids the empty-frontmatter parse-fail loop the user
+                // hit when toggling Form → Raw → Form on a fresh form.
+                const formIsEffectivelyEmpty = this.isNew
+                    && ! (this.state.frontmatter.title || '').trim()
+                    && ! (this.state.frontmatter.category || '').trim()
+                    && this.state.ingredients.length === 0
+                    && this.state.method.length === 0;
+
+                if (formIsEffectivelyEmpty) {
+                    this.mode = target;
+                    this.$nextTick(() => {
+                        this.renderRawShadow();
+                        if (target === 'form') this.initSortables();
+                    });
+                    return;
+                }
+
                 if (target === 'raw') {
                     // Form → Raw: serialize state to markdown server-side
                     // and populate the textarea.
@@ -1227,8 +1249,16 @@ window.recipeEditor = function (config) {
                         this.state = this.hydrate(r);
                         this.$nextTick(() => this.initSortables());
                     } else if (r && r.error) {
-                        alert('Cannot switch to form mode — the markdown didn\'t parse:\n' + r.error);
-                        return;
+                        // On the new-recipe flow we don't want to trap
+                        // the user in raw mode just because they typed
+                        // something malformed (or nothing at all). Surface
+                        // the error but still let them toggle back.
+                        if (this.isNew) {
+                            console.warn('parse failed on new-recipe raw → form toggle:', r.error);
+                        } else {
+                            alert('Cannot switch to form mode — the markdown didn\'t parse:\n' + r.error);
+                            return;
+                        }
                     }
                 }
                 this.mode = target;

@@ -99,6 +99,19 @@ final class RecipeSerializer
             $map[$key] = $value;
         }
 
+        // Phase 11H.1: when the frontmatter map is entirely empty (the
+        // /recipes/new flow before the user has typed anything), Yaml::dump
+        // returns `{  }` (flow-style empty mapping, no trailing newline).
+        // Concatenated with `---\n` by serialize(), this produces
+        // `---\n{  }---\n` — closing delimiter glued onto the same line.
+        // The parser regex requires the delimiters to be on their own
+        // lines, so the round-trip fails. Emit empty content instead so
+        // serialize() yields `---\n---\n\n## Ingredients\n` — still
+        // structurally valid markdown, just with an empty frontmatter.
+        if ($map === []) {
+            return '';
+        }
+
         // Dump with inline=1: top-level is block (one key per line), nested
         // arrays render inline like `tags: [a, b]`. Quoting is symfony/yaml's
         // job — it escapes only when necessary.

@@ -249,6 +249,35 @@ final class RecipeSerializerTest extends TestCase
     }
 
     /**
+     * Phase 11H.1 regression — when every frontmatter field is empty
+     * (the /recipes/new flow before the user has typed anything), the
+     * serializer used to emit `---\n{  }---\n\n## Ingredients\n` because
+     * symfony/yaml dumps an empty PHP array as the flow-style `{  }`
+     * literal. The closing delimiter ended up on the same line as the
+     * empty mapping, and the parser regex couldn't match. The fix is to
+     * emit empty content between the delimiters for an empty frontmatter
+     * map, so the output is structurally well-formed even if the recipe
+     * has no metadata yet.
+     */
+    public function test_empty_frontmatter_does_not_glue_closing_delimiter(): void
+    {
+        $recipe = new ParsedRecipe(
+            frontmatter: new Frontmatter(title: '', category: ''),
+            ingredients: [],
+            method: [],
+        );
+        $markdown = $this->serializer->serialize($recipe);
+
+        // The `{  }` flow-style empty mapping must not appear adjacent to
+        // the closing delimiter — that's the substring that broke the
+        // round-trip.
+        $this->assertStringNotContainsString('{  }---', $markdown);
+        $this->assertStringNotContainsString("{  }\n---", $markdown);
+        // Delimiters must each occupy their own line.
+        $this->assertStringContainsString("---\n---\n", $markdown);
+    }
+
+    /**
      * Build a ParsedRecipe in one call with sane defaults.
      *
      * @param  array<ParsedIngredient>  $ingredients
