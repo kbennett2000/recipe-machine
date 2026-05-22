@@ -771,20 +771,40 @@ window.recipeEditor = function (config) {
         _previewTimer: null,
         _keyCounter: 0,
 
+        // Phase 11F: dirty-state tracking. Snapshot of the JSON state at
+        // load (or after a successful save); `dirty` is recomputed on a
+        // debounce when the user mutates anything.
+        _initialStateJson: '',
+        _dirtyTimer: null,
+        dirty: false,
+
         init(initialState) {
             if (initialState) {
                 this.state = this.hydrate(initialState);
             }
+            // Snapshot the initial state for the dirty-tracking comparison.
+            // Phase 11F: shows an amber dot on the mode toggle when the
+            // user has unsaved changes vs. the last-loaded state.
+            this._initialStateJson = JSON.stringify(this.dehydrate());
+
             // Always run a preview on first render so the pane isn't blank.
-            this.$nextTick(() => this.schedulePreview());
-            // Watch state changes (deep) — refresh the preview when anything
-            // moves. Alpine 3's $watch isn't deep, so we lean on the form's
-            // x-on:input/change/x-model bindings to trigger via the
-            // schedulePreview() calls we sprinkle into mutator methods.
-            // For broad coverage we also schedule on any 'input' event in
-            // the form subtree.
-            this.$el.addEventListener('input', () => this.schedulePreview());
-            this.$el.addEventListener('change', () => this.schedulePreview());
+            this.$nextTick(() => {
+                this.schedulePreview();
+                this.renderRawShadow();
+            });
+
+            // Broad input/change listener: triggers preview refresh + the
+            // debounced dirty re-evaluation. Individual mutator methods
+            // (addStep, removeIngredient, etc.) also call schedulePreview()
+            // directly so reorders and clicks register.
+            this.$el.addEventListener('input', () => {
+                this.schedulePreview();
+                this.scheduleDirtyCheck();
+            });
+            this.$el.addEventListener('change', () => {
+                this.schedulePreview();
+                this.scheduleDirtyCheck();
+            });
 
             // Wire up SortableJS for the ingredient and method lists
             // (in form mode only; the lists exist in the DOM either way
@@ -865,17 +885,28 @@ window.recipeEditor = function (config) {
         // ---- Sortable wiring ----
 
         initSortables() {
+            // Phase 11F: long-press to initiate drag on touch; instant on
+            // mouse. `delay` is the time the user holds before drag starts.
+            // `delayOnTouchOnly: true` keeps desktop click-drag immediate.
+            // `touchStartThreshold` ignores tiny finger jitter during press.
+            const opts = {
+                handle: '.drag-handle',
+                animation: 150,
+                delay: 500,
+                delayOnTouchOnly: true,
+                touchStartThreshold: 5,
+                chosenClass: 'sortable-chosen',
+                ghostClass: 'sortable-ghost',
+            };
             if (this.$refs.ingredientsList) {
                 new Sortable(this.$refs.ingredientsList, {
-                    handle: '.drag-handle',
-                    animation: 150,
+                    ...opts,
                     onEnd: (ev) => this.reorderIngredients(ev),
                 });
             }
             if (this.$refs.methodList) {
                 new Sortable(this.$refs.methodList, {
-                    handle: '.drag-handle',
-                    animation: 150,
+                    ...opts,
                     onEnd: (ev) => this.reorderMethod(ev),
                 });
             }
@@ -953,11 +984,11 @@ window.recipeEditor = function (config) {
         },
 
         addGroup() {
-            const name = prompt('Group name?');
-            if (! name) return;
-            // The group "exists" the moment any ingredient is tagged with it.
-            // Add an empty new ingredient row pre-tagged so the group has
-            // something to show.
+            // Phase 11F: dropped window.prompt() in favor of inline editing.
+            // Create a new ingredient tagged with a unique placeholder
+            // group name; the Groups Manager row renders its editable name
+            // input below, which the next $nextTick auto-focuses.
+            const placeholder = this.uniqueGroupName('New group');
             this.state.ingredients.push({
                 _key: ++this._keyCounter,
                 raw: '',
@@ -969,9 +1000,25 @@ window.recipeEditor = function (config) {
                 modifier: '',
                 note: '',
                 optional: false,
-                group: name,
+                group: placeholder,
             });
             this.schedulePreview();
+            this.$nextTick(() => {
+                // Auto-focus the group's rename input so the user can type
+                // a real name without an extra click.
+                const input = this.$el.querySelector('[data-group-name="'+CSS.escape(placeholder)+'"]');
+                if (input) input.focus();
+            });
+        },
+
+        uniqueGroupName(base) {
+            const existing = new Set(this.groupNames());
+            if (! existing.has(base)) return base;
+            for (let i = 2; i < 100; i++) {
+                const candidate = base + ' ' + i;
+                if (! existing.has(candidate)) return candidate;
+            }
+            return base + ' ' + Date.now();
         },
 
         renameGroup(oldName, newName) {
@@ -1009,9 +1056,20 @@ window.recipeEditor = function (config) {
         // ---- Frontmatter extras ----
 
         addExtra() {
-            const key = prompt('Field name (e.g. "weight_grams")?');
-            if (! key) return;
-            this.state.frontmatter.extra = { ...this.state.frontmatter.extra, [key]: '' };
+            // Phase 11F: dropped window.prompt(). Create a placeholder
+            // entry and auto-focus its key input for inline rename.
+            let placeholder = 'new_field';
+            const existing = Object.keys(this.state.frontmatter.extra || {});
+            let i = 1;
+            while (existing.includes(placeholder)) {
+                i += 1;
+                placeholder = 'new_field_' + i;
+            }
+            this.state.frontmatter.extra = { ...this.state.frontmatter.extra, [placeholder]: '' };
+            this.$nextTick(() => {
+                const input = this.$el.querySelector('[data-extra-key="'+CSS.escape(placeholder)+'"]');
+                if (input) input.focus();
+            });
         },
 
         removeExtra(key) {
@@ -1063,7 +1121,27 @@ window.recipeEditor = function (config) {
         },
 
         onRawInput() {
+            this.renderRawShadow();
             this.schedulePreview();
+        },
+
+        // Phase 11F: syntax-cue overlay restored from 11D.1. The raw-mode
+        // textarea is transparent; this method paints the colorized
+        // markdown into the shadow `<pre>` that sits beneath it.
+        renderRawShadow() {
+            const ta = this.$refs.rawTextarea;
+            const shadow = this.$refs.rawShadow;
+            if (! ta || ! shadow) return;
+            shadow.innerHTML = highlightMarkdown(ta.value);
+            this.syncRawShadowScroll();
+        },
+
+        syncRawShadowScroll() {
+            const ta = this.$refs.rawTextarea;
+            const shadow = this.$refs.rawShadow;
+            if (! ta || ! shadow) return;
+            shadow.scrollTop = ta.scrollTop;
+            shadow.scrollLeft = ta.scrollLeft;
         },
 
         onKeydown(ev) {
@@ -1076,9 +1154,45 @@ window.recipeEditor = function (config) {
             ev.preventDefault();
             const ta = ev.target;
             const start = ta.selectionStart;
+            const end = ta.selectionEnd;
             const value = ta.value;
-            ta.value = value.substring(0, start) + '  ' + value.substring(ta.selectionEnd);
-            ta.selectionStart = ta.selectionEnd = start + 2;
+            const selectionSpansLines = value.substring(start, end).includes('\n');
+            if (ev.shiftKey) {
+                // Shift+Tab: unindent. If selection spans lines, unindent each.
+                if (selectionSpansLines) {
+                    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                    const before = value.substring(0, lineStart);
+                    const block = value.substring(lineStart, end);
+                    const after = value.substring(end);
+                    const unindented = block.split('\n').map((l) => l.replace(/^  /, '')).join('\n');
+                    ta.value = before + unindented + after;
+                    ta.selectionStart = Math.max(lineStart, start - 2);
+                    ta.selectionEnd = end - (block.length - unindented.length);
+                } else {
+                    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                    const lineHead = value.substring(lineStart, start);
+                    const trimmed = lineHead.replace(/^  /, '');
+                    const removed = lineHead.length - trimmed.length;
+                    ta.value = value.substring(0, lineStart) + trimmed + value.substring(start);
+                    ta.selectionStart = ta.selectionEnd = start - removed;
+                }
+            } else {
+                if (selectionSpansLines) {
+                    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                    const before = value.substring(0, lineStart);
+                    const block = value.substring(lineStart, end);
+                    const after = value.substring(end);
+                    const indented = block.split('\n').map((l) => '  ' + l).join('\n');
+                    ta.value = before + indented + after;
+                    ta.selectionStart = start + 2;
+                    ta.selectionEnd = end + (indented.length - block.length);
+                } else {
+                    ta.value = value.substring(0, start) + '  ' + value.substring(end);
+                    ta.selectionStart = ta.selectionEnd = start + 2;
+                }
+            }
+            // Repaint the shadow after a programmatic edit.
+            this.renderRawShadow();
         },
 
         // ---- Preview ----
@@ -1086,6 +1200,13 @@ window.recipeEditor = function (config) {
         schedulePreview() {
             if (this._previewTimer) clearTimeout(this._previewTimer);
             this._previewTimer = setTimeout(() => this.refreshPreview(), 300);
+        },
+
+        scheduleDirtyCheck() {
+            if (this._dirtyTimer) clearTimeout(this._dirtyTimer);
+            this._dirtyTimer = setTimeout(() => {
+                this.dirty = JSON.stringify(this.dehydrate()) !== this._initialStateJson;
+            }, 200);
         },
 
         async refreshPreview() {

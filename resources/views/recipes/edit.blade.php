@@ -49,7 +49,7 @@
             data-initial-markdown="{{ old('markdown', $markdown) }}"
             class="space-y-4">
 
-        {{-- Mode toggle --}}
+        {{-- Mode toggle + dirty indicator --}}
         <div class="flex items-center gap-2">
             <span class="text-sm text-stone-500 dark:text-stone-500">Mode:</span>
             <div class="inline-flex rounded-md border border-stone-300 bg-white p-0.5 dark:border-stone-700 dark:bg-stone-900">
@@ -66,6 +66,14 @@
                 </button>
             </div>
             <span x-show="modeSwitching" x-cloak class="text-xs text-stone-400 dark:text-stone-600">switching…</span>
+            {{-- Phase 11F dirty indicator: amber dot + tooltip. Hidden until
+                 the user's first edit; cleared on successful save. --}}
+            <span x-show="dirty" x-cloak data-testid="dirty-indicator"
+                  title="Unsaved changes"
+                  class="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400">
+                <span class="inline-block h-2 w-2 rounded-full bg-amber-500"></span>
+                Unsaved
+            </span>
         </div>
 
         <form id="edit-form" method="POST" action="{{ route('recipes.update', ['recipe' => $recipe->slug]) }}"
@@ -82,16 +90,26 @@
                         @include('recipes._edit_form')
                     </div>
 
-                    {{-- Raw mode --}}
-                    <div x-show="mode === 'raw'" x-cloak class="space-y-2">
+                    {{-- Raw mode: textarea with restored syntax-cue overlay
+                         (Phase 11D.1 → dropped in 11E → restored here). A
+                         transparent-text textarea sits on top of a colorized
+                         `<pre>` shadow. Both elements live under the same
+                         recipeEditor Alpine scope; no nested component. --}}
+                    <div x-show="mode === 'raw'" x-cloak class="relative">
                         <label for="markdown" class="sr-only">Recipe markdown</label>
+                        <pre x-ref="rawShadow"
+                             aria-hidden="true"
+                             class="pointer-events-none absolute inset-0 m-0 rounded border border-transparent px-4 py-3 text-sm leading-relaxed text-stone-700 dark:text-stone-300 overflow-hidden whitespace-pre-wrap break-words"
+                             style="font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace; tab-size: 2;"></pre>
                         <textarea id="markdown" name="markdown" rows="40"
                                   x-ref="rawTextarea"
                                   spellcheck="false" autocomplete="off"
                                   x-on:input="onRawInput()"
+                                  x-on:scroll="syncRawShadowScroll()"
                                   x-on:keydown="onKeydown($event)"
-                                  class="w-full rounded border border-stone-300 bg-white px-4 py-3 text-sm leading-relaxed shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/30 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
-                                  style="font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace; tab-size: 2;">{{ old('markdown', $markdown) }}</textarea>
+                                  data-markdown-editor="true"
+                                  class="relative w-full rounded border border-stone-300 px-4 py-3 text-sm leading-relaxed shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/30 dark:border-stone-700"
+                                  style="font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace; tab-size: 2; caret-color: rgb(217 119 6); color: transparent; -webkit-text-fill-color: transparent; background-color: transparent;">{{ old('markdown', $markdown) }}</textarea>
                     </div>
                 </div>
 
@@ -110,7 +128,7 @@
                 </aside>
             </div>
 
-            {{-- Save button (always visible at bottom) --}}
+            {{-- Save button (always visible at bottom of form). --}}
             <div class="mt-6 flex items-center gap-4">
                 <button type="submit"
                         class="inline-flex items-center rounded-lg border border-amber-400 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50">
@@ -120,6 +138,22 @@
                    class="text-sm text-stone-600 hover:text-amber-700 dark:text-stone-400 dark:hover:text-amber-400">
                     ← Back to recipe
                 </a>
+            </div>
+
+            {{-- Phase 11F: mobile-only sticky save bar pinned to the viewport
+                 bottom so the save action is reachable from anywhere in the
+                 form. Hidden on lg+ where the inline save button is in view. --}}
+            <div data-testid="mobile-save-bar"
+                 class="lg:hidden fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 backdrop-blur px-4 py-3 shadow-[0_-2px_8px_rgba(0,0,0,0.06)] dark:border-stone-800 dark:bg-stone-900/95">
+                <div class="mx-auto flex max-w-6xl items-center justify-between gap-3">
+                    <a href="{{ route('recipes.show', ['recipe' => $recipe->slug]) }}"
+                       class="text-sm text-stone-600 dark:text-stone-400">Cancel</a>
+                    <button type="submit"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-amber-400 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                        <span x-show="dirty" x-cloak class="inline-block h-2 w-2 rounded-full bg-amber-500"></span>
+                        Save
+                    </button>
+                </div>
             </div>
         </form>
 

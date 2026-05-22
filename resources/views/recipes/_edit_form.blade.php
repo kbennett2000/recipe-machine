@@ -49,10 +49,15 @@
             <p class="mt-1 text-xs text-stone-500 dark:text-stone-600">Category moves aren't supported in the editor.</p>
         </label>
         <label class="block">
-            <span class="text-xs font-medium text-stone-600 dark:text-stone-400">Slug</span>
+            <span class="text-xs font-medium text-stone-600 dark:text-stone-400 flex items-center gap-2">
+                Slug
+                <span class="inline-flex items-center rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-stone-600 dark:bg-stone-800 dark:text-stone-400"
+                      title="Slug is derived from the filename. Rename via terminal if needed.">
+                    🔒 immutable
+                </span>
+            </span>
             <input type="text" :value="state.frontmatter.slug" readonly disabled
                    class="mt-1 block w-full rounded border border-stone-300 bg-stone-100 px-2 py-1.5 text-sm text-stone-500 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-500">
-            <p class="mt-1 text-xs text-stone-500 dark:text-stone-600">Slug is derived from the filename; renames need a manual file move.</p>
         </label>
         <label class="block">
             <span class="text-xs font-medium text-stone-600 dark:text-stone-400">Servings</span>
@@ -63,6 +68,7 @@
         <label class="block">
             <span class="text-xs font-medium text-stone-600 dark:text-stone-400">Yields</span>
             <input type="number" x-model.number="state.frontmatter.yields" min="0"
+                   inputmode="numeric"
                    placeholder="e.g. 12"
                    class="mt-1 block w-full rounded border border-stone-300 bg-white px-2 py-1.5 text-sm dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100">
         </label>
@@ -143,46 +149,69 @@
             <li class="flex items-start gap-2 rounded border border-stone-200 bg-white p-2 dark:border-stone-800 dark:bg-stone-900"
                 :data-key="ing._key">
                 <span class="cursor-grab select-none touch-none text-stone-400 hover:text-stone-600 dark:text-stone-600 dark:hover:text-stone-400 pt-1.5 drag-handle"
-                      style="min-width: 24px; min-height: 24px; display: inline-flex; align-items: center; justify-content: center;">⋮⋮</span>
-                <div class="flex-1 grid grid-cols-12 gap-1.5">
-                    <div class="col-span-3 sm:col-span-2">
-                        <input type="text" x-model="ing.amount" inputmode="decimal" placeholder="amt"
-                               class="block w-full rounded border border-stone-300 bg-white px-1.5 py-1 text-xs dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
+                      style="min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;"
+                      aria-label="Drag to reorder">⋮⋮</span>
+                {{-- Mobile (< sm): stacked 2-row layout per the Phase 11F spec.
+                     Desktop (sm+): the existing inline grid. --}}
+                <div class="flex-1 space-y-1.5 min-w-0">
+                    {{-- Row 1: amount / unit / group / optional. Always inline. --}}
+                    <div class="grid grid-cols-12 gap-1.5">
+                        <div class="col-span-4 sm:col-span-2">
+                            <input type="text" x-model="ing.amount" inputmode="decimal" placeholder="amt"
+                                   autocapitalize="none"
+                                   class="block w-full rounded border border-stone-300 bg-white px-1.5 py-1 text-xs dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
+                        </div>
+                        <div class="col-span-4 sm:col-span-2">
+                            <select x-model="ing.unit"
+                                    class="block w-full rounded border border-stone-300 bg-white px-1 py-1 text-xs dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
+                                @foreach ($unitOptions as [$value, $label])
+                                    <option value="{{ $value }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="hidden sm:block sm:col-span-4">
+                            <input type="text" x-model="ing.ingredient" placeholder="ingredient"
+                                   class="block w-full rounded border border-stone-300 bg-white px-1.5 py-1 text-xs dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
+                        </div>
+                        <div class="hidden sm:block sm:col-span-2">
+                            <div class="flex items-center gap-1">
+                                <input type="text" x-model="ing.modifier" placeholder="modifier"
+                                       class="block w-full rounded border border-stone-300 bg-white px-1.5 py-1 text-xs dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
+                                <span class="cursor-help text-stone-400 dark:text-stone-600" title="Preparation state (post-comma in original line): diced, softened, minced.">?</span>
+                            </div>
+                        </div>
+                        <div class="col-span-2 sm:col-span-1">
+                            <select x-model="ing.group" aria-label="Sub-group"
+                                    class="block w-full rounded border border-stone-300 bg-white px-1 py-1 text-xs dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
+                                <option :value="null">—</option>
+                                <template x-for="g in groupNames()" :key="g">
+                                    <option :value="g" x-text="g"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="col-span-2 sm:col-span-1 flex items-center justify-end">
+                            <label class="flex items-center gap-1 text-xs text-stone-600 dark:text-stone-400 cursor-pointer">
+                                <input type="checkbox" x-model="ing.optional" class="rounded">
+                                <span>opt</span>
+                            </label>
+                        </div>
                     </div>
-                    <div class="col-span-3 sm:col-span-2">
-                        <select x-model="ing.unit"
-                                class="block w-full rounded border border-stone-300 bg-white px-1 py-1 text-xs dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
-                            @foreach ($unitOptions as [$value, $label])
-                                <option value="{{ $value }}">{{ $label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="col-span-6 sm:col-span-4">
+                    {{-- Row 2: ingredient (mobile only — already inline on desktop) --}}
+                    <div class="sm:hidden">
                         <input type="text" x-model="ing.ingredient" placeholder="ingredient"
                                class="block w-full rounded border border-stone-300 bg-white px-1.5 py-1 text-xs dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
                     </div>
-                    <div class="col-span-6 sm:col-span-2">
+                    {{-- Row 3: modifier (mobile only) --}}
+                    <div class="sm:hidden flex items-center gap-1">
                         <input type="text" x-model="ing.modifier" placeholder="modifier"
                                class="block w-full rounded border border-stone-300 bg-white px-1.5 py-1 text-xs dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
+                        <span class="cursor-help text-stone-400 dark:text-stone-600" title="Preparation state (post-comma in original line): diced, softened, minced.">?</span>
                     </div>
-                    <div class="col-span-5 sm:col-span-1">
-                        <select x-model="ing.group"
-                                class="block w-full rounded border border-stone-300 bg-white px-1 py-1 text-xs dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100">
-                            <option :value="null">(no group)</option>
-                            <template x-for="g in groupNames()" :key="g">
-                                <option :value="g" x-text="g"></option>
-                            </template>
-                        </select>
-                    </div>
-                    <div class="col-span-7 sm:col-span-1 flex items-center gap-1">
-                        <label class="flex items-center gap-1 text-xs text-stone-600 dark:text-stone-400">
-                            <input type="checkbox" x-model="ing.optional" class="rounded">
-                            opt
-                        </label>
-                    </div>
-                    <div class="col-span-12">
+                    {{-- Row 4: note (both desktop + mobile, full width) --}}
+                    <div class="flex items-center gap-1">
                         <input type="text" x-model="ing.note" placeholder="note (em-dash content)"
                                class="block w-full rounded border border-stone-200 bg-white/50 px-1.5 py-1 text-xs dark:border-stone-800 dark:bg-stone-900/50 dark:text-stone-300">
+                        <span class="cursor-help text-stone-400 dark:text-stone-600" title="Free-form note (post-em-dash in source): adjust to taste, for dusting, see also …">?</span>
                     </div>
                 </div>
                 <button type="button" @click="removeIngredient(ing._key)"
@@ -207,7 +236,9 @@
         <p class="text-xs font-medium text-stone-500 dark:text-stone-600">Groups</p>
         <template x-for="(g, gi) in groupNames()" :key="g">
             <div class="flex items-center gap-2">
-                <input type="text" :value="g" @change="renameGroup(g, $event.target.value)"
+                <input type="text" :value="g" :data-group-name="g"
+                       @change="renameGroup(g, $event.target.value)"
+                       @keydown.enter.prevent="$event.target.blur()"
                        class="rounded border border-stone-300 bg-white px-2 py-1 text-xs dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100">
                 <button type="button" @click="deleteGroup(g)"
                         class="text-xs text-stone-500 hover:text-rose-600 dark:text-stone-500 dark:hover:text-rose-400">
@@ -296,7 +327,9 @@
         <p class="text-xs text-stone-500 dark:text-stone-600">Custom frontmatter keys that aren't part of the canonical schema. Renders as-is in YAML.</p>
         <template x-for="(value, key) in (state.frontmatter.extra || {})" :key="key">
             <div class="flex items-center gap-2">
-                <input type="text" :value="key" @change="renameExtra(key, $event.target.value)"
+                <input type="text" :value="key" :data-extra-key="key"
+                       @change="renameExtra(key, $event.target.value)"
+                       @keydown.enter.prevent="$event.target.blur()"
                        class="w-1/3 rounded border border-stone-300 bg-white px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100">
                 <input type="text" :value="value" @input="state.frontmatter.extra[key] = $event.target.value"
                        class="flex-1 rounded border border-stone-300 bg-white px-2 py-1 text-sm dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100">

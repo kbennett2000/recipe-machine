@@ -48,6 +48,21 @@
     @apply bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200;
 }
 
+/* Phase 11F: SortableJS drag affordance. `.sortable-chosen` fires when the
+   long-press triggers OR a desktop click-drag begins; `.sortable-ghost`
+   is the placeholder where the row will land. The chosen-row gets a
+   shadow + scale that signals "you've grabbed me." */
+.sortable-chosen {
+    @apply shadow-lg ring-2 ring-amber-400;
+    transform: scale(1.02);
+}
+.sortable-ghost {
+    @apply opacity-40 ring-2 ring-stone-300 dark:ring-stone-700;
+    /* dashed isn't a stock Tailwind ring style; raw CSS keeps it portable. */
+    outline: 2px dashed rgb(168 162 158 / 0.6);
+    outline-offset: -2px;
+}
+
 /* Cooking-mode timer button — same amber tint family as .metric-timer, but
    with a border so it reads as INTERACTIVE rather than the passive temperature
    pill next door. Hover deepens the amber, focus-visible gets a 2px ring. The

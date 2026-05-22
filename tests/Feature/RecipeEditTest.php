@@ -268,4 +268,64 @@ final class RecipeEditTest extends IndexedCorpusTestCase
         $response = $this->get('/recipes/'.self::TEST_SLUG.'/edit');
         $response->assertSee('onKeydown($event)', escape: false);
     }
+
+    // === Phase 11F additions ===
+
+    public function test_raw_mode_textarea_has_restored_syntax_cue_overlay(): void
+    {
+        // Phase 11D.1 dropped a colorized `<pre>` shadow behind the
+        // transparent textarea — that was lost in the 11E rewrite and
+        // restored in 11F. Check the overlay's hallmark: an x-ref to
+        // rawShadow, and the textarea's transparent text-fill style.
+        $response = $this->get('/recipes/'.self::TEST_SLUG.'/edit');
+        $response->assertSee('x-ref="rawShadow"', escape: false);
+        $response->assertSee('-webkit-text-fill-color: transparent', escape: false);
+        // The render method is hooked up via x-on:input which calls
+        // onRawInput → renderRawShadow; the HTML has the binding.
+        $response->assertSee('syncRawShadowScroll', escape: false);
+    }
+
+    public function test_slug_field_has_immutable_pill(): void
+    {
+        // Phase 11F: tiny "immutable" pill next to the slug input so the
+        // disabled state reads as intentional, not broken.
+        $response = $this->get('/recipes/'.self::TEST_SLUG.'/edit');
+        $html = $response->getContent();
+        // Pill text + tooltip text both present near the slug field.
+        $this->assertMatchesRegularExpression('/immutable/i', $html);
+        $this->assertStringContainsString(
+            'Slug is derived from the filename. Rename via terminal if needed.',
+            $html,
+        );
+    }
+
+    public function test_ingredient_rows_have_modifier_and_note_helper_tooltips(): void
+    {
+        // Phase 11F: a tiny "?" with a title attr lives next to each
+        // modifier and note input, distinguishing them in plain English
+        // since the comma-vs-em-dash semantic is non-obvious.
+        $response = $this->get('/recipes/'.self::TEST_SLUG.'/edit');
+        $html = $response->getContent();
+        $this->assertStringContainsString('Preparation state (post-comma', $html);
+        $this->assertStringContainsString('Free-form note (post-em-dash', $html);
+    }
+
+    public function test_edit_page_has_mobile_sticky_save_bar(): void
+    {
+        // Phase 11F: a lg:hidden fixed-bottom save bar lives at the end
+        // of the form so mobile users can save without scrolling.
+        $response = $this->get('/recipes/'.self::TEST_SLUG.'/edit');
+        $html = $response->getContent();
+        $this->assertStringContainsString('data-testid="mobile-save-bar"', $html);
+        $this->assertStringContainsString('lg:hidden fixed inset-x-0 bottom-0', $html);
+    }
+
+    public function test_edit_page_has_unsaved_indicator(): void
+    {
+        // Phase 11F: dirty-state indicator on the mode toggle row.
+        $response = $this->get('/recipes/'.self::TEST_SLUG.'/edit');
+        $html = $response->getContent();
+        $this->assertStringContainsString('data-testid="dirty-indicator"', $html);
+        $this->assertStringContainsString('Unsaved', $html);
+    }
 }
