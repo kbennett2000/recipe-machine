@@ -22,7 +22,45 @@ make rebuild                       # build image + boot + migrate
 make reindex                       # parse recipes/ into the cache
 ```
 
-Now open <http://localhost:8000>.
+Now open <http://localhost:8000>. (To use a different host port, set
+`APP_PORT` in `.env` before `make dev` — see
+[Changing the port](#changing-the-port) below.)
+
+## Changing the port
+
+The host-facing port the container binds to is configurable via the
+`APP_PORT` environment variable. Default is `8000`.
+
+```sh
+# In .env (or your shell)
+APP_PORT=8080
+```
+
+Then `make dev` (or `docker compose up -d`) — the app will be served
+at `http://<host>:8080/`. The container-internal port stays at 8000
+regardless; only the host-side mapping changes.
+
+## Offline operation
+
+Recipe Machine is designed to run **fully offline** on a LAN once
+the image is built and the recipes are indexed. There are no CDN
+dependencies, no Google Fonts, no analytics, no telemetry. Specifically:
+
+- **Fonts**: Fraunces + Inter are self-hosted under
+  [public/fonts/](../public/fonts/).
+- **JS/CSS**: bundled into the image at build time via Vite; no
+  runtime fetches to package CDNs.
+- **Database**: SQLite, local file.
+- **LLM fallback** (Phase 9): **opt-in, indexer-only**. Disabled by
+  default (`RECIPE_MACHINE_LLM_FALLBACK=false` in `.env`). Even when
+  enabled, it only makes network calls when you explicitly run
+  `php artisan recipes:reindex --with-llm` — never during request
+  handling. Leave it off to keep the app 100 % offline.
+
+The initial `make rebuild` does need internet (Docker pulls the
+base image; Composer + npm pull dependencies during the build).
+After that, nothing on the LAN host needs to reach the public
+internet to use Recipe Machine.
 
 ## The Makefile targets
 

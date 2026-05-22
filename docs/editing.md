@@ -140,9 +140,10 @@ fully privileged. The intended deployment is a single-user LAN
 This means:
 
 - Don't expose the editor to the public internet.
-- Don't bind the container to a public IP. Default
-  `localhost:8000` is fine; if you need LAN access, bind to the
-  LAN IP, not `0.0.0.0`.
+- Don't bind the container to a public IP. The default host
+  port (`APP_PORT=8000`, see `.env.example`) bound to
+  `localhost` is fine; if you need LAN access, bind to the LAN
+  IP, not `0.0.0.0`.
 - Don't assume anyone with the URL needs to be authenticated to
   destroy data — they don't. They can delete recipes via the
   Delete button. (Git history will save you, but only if you've

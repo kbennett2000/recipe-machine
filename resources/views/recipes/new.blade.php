@@ -137,8 +137,8 @@
 
         <aside class="rounded-lg border border-stone-200 bg-stone-50 p-3 text-xs text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-400">
             <span class="font-semibold">Tips:</span>
-            The slug is fixed after the first save. Choose carefully. Markdown reference:
-            <a href="https://github.com/kbennett2000/recipe-machine/blob/main/docs/recipe-format.md" target="_blank" rel="noopener" class="text-amber-700 underline hover:text-amber-800 dark:text-amber-400">recipe-format.md</a>.
+            The slug is fixed after the first save. Choose carefully. Markdown reference: see
+            <code class="rounded bg-stone-200 px-1 py-0.5 text-[0.85em] dark:bg-stone-800">docs/recipe-format.md</code> in the repo.
         </aside>
     </div>
 @endsection

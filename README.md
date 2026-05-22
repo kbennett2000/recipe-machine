@@ -174,6 +174,22 @@ Open <http://localhost:8000>. To access from other devices on the
 LAN, replace `localhost` with the host's LAN IP (e.g.
 `http://192.168.1.42:8000`).
 
+**Changing the port:** the host-facing port is configurable via
+`APP_PORT` in `.env` — set e.g. `APP_PORT=8080` and re-run
+`make dev` (or `docker compose up -d`). The container-internal
+port stays at 8000.
+
+**Offline operation:** once the image is built and the recipes
+are indexed, Recipe Machine runs **fully offline** on your LAN —
+no outbound requests, no CDN dependencies, no telemetry. Fonts
+(Fraunces, Inter) are self-hosted in [public/fonts/](public/fonts/);
+JS/CSS are bundled into the image at build time; the SQLite cache
+is local. The **only** feature that talks to the internet is the
+optional LLM ingredient-parser fallback, and only when you
+explicitly run `php artisan recipes:reindex --with-llm`. Leave
+`RECIPE_MACHINE_LLM_FALLBACK=false` (the default) to disable it
+entirely. See [docs/llm-fallback.md](docs/llm-fallback.md).
+
 **Add a recipe:**
 
 Two paths. The web editor (v1.1) is easier for one-offs:

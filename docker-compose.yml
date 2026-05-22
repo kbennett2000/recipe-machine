@@ -4,7 +4,10 @@ services:
     image: recipe-machine:dev
     container_name: recipe-machine
     ports:
-      - "8000:8000"
+      # Host-facing port is configurable via APP_PORT in .env (default 8000).
+      # The container-internal port stays at 8000 — it's an implementation
+      # detail of `php artisan serve` inside the container.
+      - "${APP_PORT:-8000}:8000"
     environment:
       APP_ENV: local
       APP_DEBUG: "true"
