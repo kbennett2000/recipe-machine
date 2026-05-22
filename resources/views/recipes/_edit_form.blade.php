@@ -185,7 +185,8 @@
     <h2 class="font-display text-lg font-semibold border-b border-stone-200 pb-1 dark:border-stone-800">Ingredients</h2>
     <ul x-ref="ingredientsList" class="space-y-2">
         <template x-for="(ing, idx) in state.ingredients.filter(i => i.parsed)" :key="ing._key">
-            <li class="flex items-start gap-2 rounded border border-stone-200 bg-white p-2 dark:border-stone-800 dark:bg-stone-900"
+            <li class="flex items-start gap-2 rounded border bg-white p-2 dark:bg-stone-900"
+                :class="ing._source === 'fallback' ? 'border-amber-300 dark:border-amber-700' : 'border-stone-200 dark:border-stone-800'"
                 :data-key="ing._key">
                 <span class="cursor-grab select-none touch-none text-stone-400 hover:text-stone-600 dark:text-stone-600 dark:hover:text-stone-400 pt-1.5 drag-handle"
                       style="min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;"
@@ -252,6 +253,26 @@
                                class="block w-full rounded border border-stone-200 bg-white/50 px-1.5 py-1 text-xs dark:border-stone-800 dark:bg-stone-900/50 dark:text-stone-300">
                         <span class="cursor-help text-stone-400 dark:text-stone-600" title="Free-form note (post-em-dash in source): adjust to taste, for dusting, see also …">?</span>
                     </div>
+                    {{-- Phase 11H: source indicator on freshly-converted rows.
+                         ✨ for LLM-cache parses; nothing for rules-parsed rows
+                         since those have always been the default; ⚠ best-effort
+                         for fallback rows so the user knows to review before
+                         saving. --}}
+                    <div x-show="ing._source === 'llm' || ing._source === 'fallback'" x-cloak
+                         class="flex items-center gap-1 text-[11px]">
+                        <span x-show="ing._source === 'llm'"
+                              data-testid="source-llm"
+                              title="Parsed via LLM cache — review before saving"
+                              class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+                            ✨ <span>LLM cache</span>
+                        </span>
+                        <span x-show="ing._source === 'fallback'"
+                              data-testid="source-fallback"
+                              title="Best-effort fallback — neither rules nor LLM cache had a match"
+                              class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+                            ⚠ <span>best-effort — review before saving</span>
+                        </span>
+                    </div>
                 </div>
                 <button type="button" @click="removeIngredient(ing._key)"
                         aria-label="Remove ingredient"
@@ -299,15 +320,22 @@
     </p>
     <ul class="space-y-2">
         <template x-for="ing in unparsedIngredients()" :key="ing._key">
-            <li class="flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/20">
-                <input type="text" x-model="ing.raw"
-                       class="flex-1 rounded border border-amber-300 bg-white px-2 py-1 text-sm dark:border-amber-700 dark:bg-stone-900 dark:text-stone-100">
-                <button type="button" @click="convertToStructured(ing._key)"
-                        class="rounded border border-amber-400 bg-white px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:bg-stone-900 dark:text-amber-300 dark:hover:bg-amber-950/40">
-                    Convert to structured
-                </button>
-                <button type="button" @click="removeIngredient(ing._key)" aria-label="Remove"
-                        class="text-stone-400 hover:text-rose-600 dark:text-stone-600 dark:hover:text-rose-400">×</button>
+            <li class="flex flex-col gap-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/20">
+                <div class="flex items-center gap-2">
+                    <input type="text" x-model="ing.raw"
+                           class="flex-1 rounded border border-amber-300 bg-white px-2 py-1 text-sm dark:border-amber-700 dark:bg-stone-900 dark:text-stone-100">
+                    <button type="button" @click="convertToStructured(ing._key)"
+                            :disabled="ing._converting"
+                            data-testid="convert-to-structured"
+                            class="rounded border border-amber-400 bg-white px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed dark:border-amber-600 dark:bg-stone-900 dark:text-amber-300 dark:hover:bg-amber-950/40">
+                        <span x-show="!ing._converting">Convert to structured</span>
+                        <span x-show="ing._converting" x-cloak>Parsing…</span>
+                    </button>
+                    <button type="button" @click="removeIngredient(ing._key)" aria-label="Remove"
+                            class="text-stone-400 hover:text-rose-600 dark:text-stone-600 dark:hover:text-rose-400">×</button>
+                </div>
+                <p x-show="ing._convertError" x-cloak x-text="ing._convertError"
+                   class="text-xs text-rose-700 dark:text-rose-400"></p>
             </li>
         </template>
     </ul>

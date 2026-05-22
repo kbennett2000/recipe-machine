@@ -29,6 +29,8 @@
         </div>
     @endif
 
+
+
     @php
         $stateAttr = $initialState !== null ? htmlspecialchars(json_encode($initialState, JSON_UNESCAPED_UNICODE), ENT_QUOTES) : '';
         $canFormMode = $initialState !== null;
@@ -38,16 +40,46 @@
                 slug: '{{ $recipe->slug }}',
                 initialMode: '{{ $canFormMode ? ($errors->has('save') ? 'raw' : 'form') : 'raw' }}',
                 hasInitialState: {{ $canFormMode ? 'true' : 'false' }},
+                initialMtime: {{ (int) $initialMtime }},
                 routes: {
                     parse: '{{ route('recipes.edit.parse', ['recipe' => $recipe->slug]) }}',
                     serialize: '{{ route('recipes.edit.serialize', ['recipe' => $recipe->slug]) }}',
                     preview: '{{ route('recipes.edit.preview', ['recipe' => $recipe->slug]) }}',
+                    mtime: '{{ route('recipes.edit.mtime', ['recipe' => $recipe->slug]) }}',
+                    parseLine: '{{ route('recipes.edit.parseLine', ['recipe' => $recipe->slug]) }}',
                 },
             })"
             x-init="init(@js($initialState))"
             data-initial-state="{{ $stateAttr }}"
             data-initial-markdown="{{ old('markdown', $markdown) }}"
+            data-initial-mtime="{{ (int) $initialMtime }}"
             class="space-y-4">
+
+        {{-- Phase 11H — stale-file banner. The recipeEditor Alpine component
+             polls /edit/mtime every ~10s and flips `fileChanged` if the
+             file on disk has been modified since this page rendered. The
+             banner sits at the top of the editor area in amber — visible
+             but non-blocking. The user can Reload to pick up the new
+             version or just keep editing and Save (the existing save path
+             overwrites unconditionally — the user accepts the clobber by
+             choosing to save). --}}
+        <div x-show="fileChanged" x-cloak data-testid="stale-file-banner"
+             class="rounded border border-amber-400 bg-amber-50 px-4 py-3 text-amber-900 shadow-sm dark:border-amber-600 dark:bg-amber-950/60 dark:text-amber-100">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <p class="font-medium">The file has changed on disk since you opened it.</p>
+                    <p class="text-sm">Your edits may overwrite changes made elsewhere.</p>
+                </div>
+                <div class="flex items-center gap-3 text-sm">
+                    <a href="{{ route('recipes.edit', ['recipe' => $recipe->slug]) }}"
+                       data-testid="stale-banner-reload"
+                       class="inline-flex items-center rounded border border-amber-500 bg-white px-3 py-1.5 font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-900/40 dark:text-amber-100 dark:hover:bg-amber-900/60">
+                        Reload
+                    </a>
+                    <span class="text-xs text-amber-800/80 dark:text-amber-200/70">or click Save below to accept your version.</span>
+                </div>
+            </div>
+        </div>
 
         {{-- Mode toggle + dirty indicator --}}
         <div class="flex items-center gap-2">

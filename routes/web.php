@@ -27,6 +27,8 @@ Route::post('/recipes/{recipe:slug}/edit', [RecipeEditController::class, 'update
 Route::post('/recipes/{recipe:slug}/edit/parse', [RecipeEditController::class, 'parse'])->name('recipes.edit.parse');
 Route::post('/recipes/{recipe:slug}/edit/serialize', [RecipeEditController::class, 'serialize'])->name('recipes.edit.serialize');
 Route::post('/recipes/{recipe:slug}/edit/preview', [RecipeEditController::class, 'preview'])->name('recipes.edit.preview');
+Route::get('/recipes/{recipe:slug}/edit/mtime', [RecipeEditController::class, 'mtime'])->name('recipes.edit.mtime');
+Route::post('/recipes/{recipe:slug}/edit/parse-line', [RecipeEditController::class, 'parseLine'])->name('recipes.edit.parseLine');
 Route::post('/recipes/{recipe:slug}/delete', [RecipeEditController::class, 'destroy'])->name('recipes.destroy');
 Route::get('/recipes/{recipe:slug}/cook', [RecipeController::class, 'cook'])->name('recipes.cook');
 Route::get('/search', [SearchController::class, 'index'])->name('search');

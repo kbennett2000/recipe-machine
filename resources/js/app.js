@@ -788,6 +788,13 @@ window.recipeEditor = function (config) {
         // re-deriving from title on every keystroke.
         slugTouched: false,
 
+        // Phase 11H: out-of-band file change detection. Initial mtime
+        // is captured server-side; an interval poll compares against
+        // the current value and flips `fileChanged` if they diverge.
+        initialMtime: config.initialMtime || 0,
+        fileChanged: false,
+        _mtimePoll: null,
+
         init(initialState) {
             if (initialState) {
                 this.state = this.hydrate(initialState);
@@ -825,6 +832,40 @@ window.recipeEditor = function (config) {
             // (in form mode only; the lists exist in the DOM either way
             // because Alpine x-show keeps both subtrees rendered).
             this.$nextTick(() => this.initSortables());
+
+            // Phase 11H — only start mtime polling when we have a real
+            // initial mtime and an endpoint to hit. The new-recipe flow
+            // omits both (there's no file yet to be stale).
+            if (this.initialMtime > 0 && this.routes.mtime) {
+                this._mtimePoll = setInterval(() => this.checkMtime(), 10000);
+            }
+        },
+
+        /**
+         * Phase 11H — single poll tick. Quietly swallows network errors
+         * (the page is still usable; we just won't warn). On a positive
+         * mismatch flips fileChanged true; the banner renders via
+         * x-show. Reload happens by normal navigation; save accepts the
+         * overwrite by going through the unchanged save path.
+         */
+        async checkMtime() {
+            if (! this.routes.mtime || this.fileChanged) return;
+            try {
+                const resp = await fetch(this.routes.mtime, {
+                    headers: { 'Accept': 'application/json' },
+                });
+                if (! resp.ok) return;
+                const data = await resp.json();
+                if (typeof data?.mtime === 'number' && data.mtime > this.initialMtime) {
+                    this.fileChanged = true;
+                    if (this._mtimePoll) {
+                        clearInterval(this._mtimePoll);
+                        this._mtimePoll = null;
+                    }
+                }
+            } catch (_) {
+                /* network blip — ignore */
+            }
         },
 
         /**
@@ -879,6 +920,9 @@ window.recipeEditor = function (config) {
                     note: i.note || '',
                     optional: !!i.optional,
                     group: i.group || null,
+                    _source: null,
+                    _converting: false,
+                    _convertError: null,
                 })),
                 method: (parsed.method || []).map((s) => ({
                     _key: ++this._keyCounter,
@@ -982,6 +1026,9 @@ window.recipeEditor = function (config) {
                 note: '',
                 optional: false,
                 group: null,
+                _source: null,
+                _converting: false,
+                _convertError: null,
             });
             this.schedulePreview();
         },
@@ -991,14 +1038,49 @@ window.recipeEditor = function (config) {
             this.schedulePreview();
         },
 
-        convertToStructured(key) {
+        async convertToStructured(key) {
             const row = this.state.ingredients.find((i) => i._key === key);
             if (! row) return;
+            const rawLine = row.raw;
+
+            // Phase 11H: ask the server. Tries rules → LLM cache →
+            // fallback. The endpoint never calls the live LLM API, so
+            // this is safe to invoke on every click.
+            let parsed = null;
+            row._converting = true;
+            row._convertError = null;
+            if (this.routes.parseLine) {
+                const r = await this.postJson(this.routes.parseLine, { line: rawLine });
+                if (r && ! r.error) {
+                    parsed = r;
+                } else if (r && r.error) {
+                    row._converting = false;
+                    row._convertError = "Couldn't parse — try editing manually";
+                    return;
+                }
+            }
+
+            // Replace the existing row with a structured one, preserving _key
+            // so SortableJS doesn't see a churn. Fall back to the old
+            // best-effort behavior if the endpoint isn't wired (test envs).
             row.parsed = true;
-            // Best-effort guess from raw: leave amount/unit empty, fill ingredient.
-            row.ingredient = row.raw;
+            if (parsed) {
+                row.amount = parsed.amount ?? null;
+                row.amount_high = parsed.amount_high ?? null;
+                row.unit = parsed.unit ?? '';
+                row.ingredient = parsed.ingredient ?? rawLine;
+                row.modifier = parsed.modifier ?? '';
+                row.note = parsed.note ?? '';
+                row.optional = !! parsed.optional;
+                row._source = parsed.source || null;
+            } else {
+                row.ingredient = rawLine;
+                row._source = 'fallback';
+            }
             row.raw = '';
+            row._converting = false;
             this.schedulePreview();
+            this.scheduleDirtyCheck();
         },
 
         unparsedIngredients() {
@@ -1033,6 +1115,9 @@ window.recipeEditor = function (config) {
                 note: '',
                 optional: false,
                 group: placeholder,
+                _source: null,
+                _converting: false,
+                _convertError: null,
             });
             this.schedulePreview();
             this.$nextTick(() => {

@@ -9,6 +9,8 @@ use App\Recipes\Display\IngredientFormatter;
 use App\Recipes\Display\MethodFormatter;
 use App\Recipes\Files\RecipeFileWriter;
 use App\Recipes\Indexing\RecipeReindexer;
+use App\Recipes\LLM\IngredientLLMParser;
+use App\Recipes\Parser\IngredientParser;
 use App\Recipes\Parser\ParsedRecipe;
 use App\Recipes\Parser\RecipeParser;
 use App\Recipes\Serializer\RecipeSerializer;
@@ -45,6 +47,8 @@ final class RecipeEditController extends Controller
         private readonly RecipeReindexer $reindexer = new RecipeReindexer,
         private readonly IngredientFormatter $ingredientFormatter = new IngredientFormatter,
         private readonly MethodFormatter $methodFormatter = new MethodFormatter,
+        private readonly IngredientParser $ingredientParser = new IngredientParser,
+        private readonly IngredientLLMParser $llmParser = new IngredientLLMParser,
     ) {}
 
     public function edit(Recipe $recipe): View
@@ -71,12 +75,16 @@ final class RecipeEditController extends Controller
         }
 
         $categories = $this->availableCategories();
+        // Phase 11H — capture the file's mtime at render time so the
+        // editor can poll for out-of-band changes and warn the user.
+        $initialMtime = filemtime($absolutePath) ?: 0;
 
         return view('recipes.edit', [
             'recipe' => $recipe,
             'markdown' => $markdown,
             'initialState' => $initialState,
             'categories' => $categories,
+            'initialMtime' => $initialMtime,
         ]);
     }
 
@@ -206,6 +214,76 @@ final class RecipeEditController extends Controller
         ])->render();
 
         return response()->json(['html' => $html]);
+    }
+
+    /**
+     * Phase 11H — GET /recipes/{slug}/edit/mtime.
+     *
+     * Returns the current filesystem mtime as a Unix timestamp. The
+     * editor polls this every ~10s and compares against the value
+     * captured at page load. A mismatch means the file changed
+     * out-of-band (another editor, git pull, etc.) and the user should
+     * know before they save and clobber the new version.
+     */
+    public function mtime(Recipe $recipe): JsonResponse
+    {
+        $absolutePath = base_path((string) $recipe->source_path);
+        if (! is_file($absolutePath)) {
+            return response()->json(['error' => 'Recipe file missing on disk.'], 404);
+        }
+        $mtime = filemtime($absolutePath);
+        if ($mtime === false) {
+            return response()->json(['error' => 'Could not read mtime.'], 500);
+        }
+        return response()->json(['mtime' => $mtime]);
+    }
+
+    /**
+     * Phase 11H — POST /recipes/{slug}/edit/parse-line.
+     *
+     * Parse a single raw line into structured ingredient fields. Tries
+     * the rules-based parser first, then falls back to the LLM cache
+     * (no live API call — interactive use shouldn't burn credits), and
+     * finally returns a best-effort fallback row with the raw line
+     * dropped into the ingredient field.
+     *
+     * Returns the same shape ParsedIngredient::toArray emits, plus a
+     * `source` field the UI uses to show a "✨" / "⚠ best-effort"
+     * indicator on the new row.
+     */
+    public function parseLine(Request $request, Recipe $recipe): JsonResponse
+    {
+        $validated = $request->validate(['line' => 'required|string']);
+        $line = trim((string) $validated['line']);
+        if ($line === '') {
+            return response()->json(['error' => 'Line is empty.'], 422);
+        }
+
+        $rules = $this->ingredientParser->parseLine($line);
+        if ($rules->parsed) {
+            return response()->json(array_merge($rules->toArray(), ['source' => 'rules']));
+        }
+
+        $llm = $this->llmParser->parseLineFromCache($line);
+        if ($llm !== null && $llm->parsed) {
+            return response()->json(array_merge($llm->toArray(), ['source' => 'llm']));
+        }
+
+        // Fallback: surface the line as the ingredient name so the user
+        // has a structured row to edit instead of nothing.
+        return response()->json([
+            'raw' => $line,
+            'parsed' => false,
+            'amount' => null,
+            'amount_high' => null,
+            'unit' => null,
+            'ingredient' => $line,
+            'modifier' => null,
+            'note' => null,
+            'optional' => false,
+            'group' => null,
+            'source' => 'fallback',
+        ]);
     }
 
     /**

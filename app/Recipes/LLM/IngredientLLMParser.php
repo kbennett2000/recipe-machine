@@ -111,6 +111,21 @@ final class IngredientLLMParser
     }
 
     /**
+     * Phase 11H — cache-only lookup for a single line. Returns the cached
+     * ParsedIngredient if there's a live 'hit' row, null otherwise (never
+     * calls the API). Used by the editor's parse-line endpoint to surface
+     * known parses without burning API credits during interactive use.
+     */
+    public function parseLineFromCache(string $line): ?ParsedIngredient
+    {
+        $cache = IngredientLlmCache::where('raw_line_hash', IngredientLlmCache::hashFor($line))->first();
+        if ($cache === null || ! $cache->isHit()) {
+            return null;
+        }
+        return $this->reviveFromPayload($line, $cache->parsed_payload ?? []);
+    }
+
+    /**
      * Walk over already-loaded unparsed ingredient rows, batch-parse them
      * through the LLM, and persist successful parses back to the DB with
      * llm_parsed=true.
